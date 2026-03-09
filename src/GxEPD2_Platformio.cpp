@@ -64,7 +64,14 @@ SPIClass hspi(HSPI);
 // Pagination variables
 int pageStarts[10]; // Stores the char index where each page begins
 int currentPage = 0;
-int totalPages = 0;
+int totalPages = 0; // NOT USED IN EPUB
+
+unsigned long btnNextPressTime = 0;
+unsigned long btnPrevPressTime = 0;
+bool btnNextPressed = false;
+bool btnPrevPressed = false;
+
+const unsigned long HOLD_DURATION = 1000; // 1 second hold duration for page turn rendering
 
 TextRenderer* renderer = nullptr;
 
@@ -82,6 +89,7 @@ void setup()
   display.epd2.selectSPI(hspi, SPISettings(4000000, MSBFIRST, SPI_MODE0));
 
   Serial.begin(115200);
+  esp_log_level_set("TextRenderer", ESP_LOG_INFO); // Set log level to INFO for all tags
 
   if (!LittleFS.begin()) {
     Serial.println("An Error has occurred while mounting LittleFS");
@@ -162,41 +170,74 @@ void helloWorld()
 
 void loop() {
   if (digitalRead(NEXT_BUTTON_PIN)==LOW){
-    // Reinit if hibernated
-    display.init(115200, true, 2, false);
-    Serial.println("Next button pressed!");
-
-    delay(50);
-
-    currentPage++;
-
-    // if (currentPage > totalPages) currentPage = 0; // Loop back to start
-    // drawTextPage(currentPage);
+    if (!btnNextPressed) {
+      btnNextPressed = true;
+      btnNextPressTime = millis();
 
       if (renderer) {
-          renderer->nextPage();
+        currentPage++;
+        Serial.printf("Next button pressed! Current page: %d\n", currentPage);
       }
+    } else {
+      if(millis() - btnNextPressTime >= HOLD_DURATION) {
+        Serial.println("Next button held for page turn rendering!");
+        btnNextPressed = false; // reset the button state
+        // Reinit if hibernated
+        display.init(115200, true, 2, false);
 
-    // wait for button release
-    while(digitalRead(NEXT_BUTTON_PIN)==LOW);
-  };
+        if (renderer) {
+          renderer->drawPage(currentPage);
+        }
+
+        btnNextPressed = false;
+
+        // wait for button release
+        while(digitalRead(NEXT_BUTTON_PIN)==LOW) {
+          delay(10); // debounce delay
+        }
+      }
+    }
+  } else {
+    if (btnNextPressed) {
+      btnNextPressed = false; // reset the button state on release
+    }
+  }
 
   if (digitalRead(PREV_BUTTON_PIN)==LOW){
-    // Reinit if hibernated
-    display.init(115200, true, 2, false);
-    Serial.println("Previous button pressed!");
+    
+    if (!btnPrevPressed) {
+      btnPrevPressed = true;
+      btnPrevPressTime = millis();
 
-    delay(50);
+      if (renderer) {
+        currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
+        Serial.printf("Previous button pressed! Current page: %d\n", currentPage);
+      }
+    } else {
+      if (millis() - btnPrevPressTime >= HOLD_DURATION) {
+        Serial.printf("Rendering previous page: %d\n", currentPage);
+        
+        display.init(115200, true, 2, false);
 
-    currentPage--;
+        if (renderer) {
+          renderer->drawPage(currentPage);
+        }
 
-    if (renderer){
-      renderer->previousPage();
+        btnNextPressed = false;
+
+        // wait for button release
+        while(digitalRead(PREV_BUTTON_PIN)==LOW) {
+          delay(10); // debounce delay
+        }
+      }
     }
+  } else {
+    if (btnPrevPressed) {
+      btnPrevPressed = false; // reset the button state on release
+    }
+  }
 
-    // wait for button release
-    while(digitalRead(PREV_BUTTON_PIN)==LOW);
-  };
+  delay(100); // Small delay to avoid busy looping
 };
 
 void clearWindow() { // UNUSED

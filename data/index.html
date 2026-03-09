@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='utf-8'?>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+  <head>
+    <title>Unknown</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <link href="stylesheet.css" rel="stylesheet" type="text/css"/>
+<link href="page_styles.css" rel="stylesheet" type="text/css"/>
+</head>
+  <body class="calibre">
+	<p class="block_">Hello Everyone, this is my very intriguing novel</p>
+	<p class="block_1"> </p>
+	<p class="block_">I have some examples of <b class="calibre1">bold</b>, CAPITALIZATION, <i class="calibre2">italics</i>, both <span class="text_">bold and italics</span>,</p>
+	<p class="block_1"> </p>
+	<p class="block_">Here are some more words that may of interest:</p>
+	<p class="block_">Building and Flashing</p>
+	<p class="block_">This project uses PlatformIO to build and flash. You will need VSCode with the PlatformIO extension installed.</p>
+	<p class="block_1"> </p>
+	<p class="block_">There are several environments configured in platformio.ini. If you click on the PlatformIO logo in the left hand navigation of VSCode, you will see a list of Project Tasks - you can pick the environment you want and then Upload.</p>
+	<p class="block_1"> </p>
+	<p class="block_">Select Environment</p>
+	<p class="block_1"> </p>
+	<p class="block_">Why did you build it?</p>
+	<p class="block_">It seemed like a nice challenge - ePub files are not the most friendly format to process on an embedded device. Making it work in a constrained environment is good fun.</p>
+	<p class="block_1"> </p>
+	<p class="block_">Can you contribute/help?</p>
+	<p class="block_">Yes - please try the project out on any e-paper boards that you have and open up pull requests if you get it working with any fixes.</p>
+	<p class="block_1"> </p>
+	<p class="block_">And if you find bugs, feel free to report (or better yet, fix!) them :)</p>
+	<p class="block_1"> </p>
+	<p class="block_">How to get it?</p>
+	<p class="block_">Make sure you clone recursively - the code uses git submodules.</p>
+	<p class="block_1"> </p>
+	<p class="block_">git clone --recursive git@github.com:atomic14/esp32-ereader.git</p>
+	<p class="block_">What boards does it work on?</p>
+	<p class="block_">The code should work with M5-Paper and other EPDiy based parallel e-Papers such as the LilyGo EPD47.</p>
+	<p class="block_1"> </p>
+	<p class="block_">PSRAM - parsing the ePub files needs a fair amount of memory</p>
+	<p class="block_">3 Buttons - these buttons can be active high or low</p>
+	<p class="block_">UP - moves up in the list of ePubs or to the previous page when reading</p>
+	<p class="block_">DOWN - moves down in the list of ePubs or to the next page when reading</p>
+	<p class="block_">SELECT - opens the ePub currently selected ePub file or goes back to the ePub list from reading mode</p>
+	<p class="block_">An SD Card - you can jury rig an SPI sd card using the instructions here:</p>
+	<p class="block_">You can use SPIFFS instead of an SD Card, but you won't be able to fit many books on it.</p>
+	<p class="block_">[Optional] A battery if you want it to be portable</p>
+	<p class="block_">SPIFFS support</p>
+	<p class="block_">To use SPIFFS instead of an SD Card add a preprocessor define to plaformio.ini -DUSE_SPIFFS.</p>
+	<p class="block_1"> </p>
+	<p class="block_">To upload the filesystem do:</p>
+	<p class="block_1"> </p>
+	<p class="block_">pio run -t uploadfs</p>
+	<p class="block_">There some issues with SPIFFS which cause some problems - particularly with persisting the state of the display when going into deep sleep - if you can get an SD Card attached these problems don't exist.</p>
+	<p class="block_1"> </p>
+	<p class="block_">Porting to other boards</p>
+	<p class="block_">To add a new board to the project you need to:</p>
+	<p class="block_1"> </p>
+	<p class="block_">Create a new board class in src/boards this should implement the methods from the Board.h class.</p>
+	<p class="block_">This may or may not be necessary - if you are using an EPDIY board then everything is taken care of with preprocessor directives and you just need to define BOARD_TYPE_EPDIY in platformio.ini build flags.</p>
+	<p class="block_1"> </p>
+	<p class="block_">If you have a completely new board then at a minimum you need to return a Renderer object that will draw to your display and a GPIOButtonControls to control navigation. Have a look at M5Paper.h for inspiration. Add your new board type to the factory method of Board.</p>
+	<p class="block_1"> </p>
+	<p class="block_">Add a new environment to `platformio.ini</p>
+	<p class="block_">The majority of the configuration is in platformio.ini using pre-processor directives. If you do add a new board then please create a new section in platofmrio.ini with the appropriate pre-processor directives for your board and open a pull request to add it to the project - I'm happy to answer any questions on this.</p>
+	<p class="block_1"> </p>
+
+</body></html>

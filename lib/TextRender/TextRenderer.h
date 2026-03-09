@@ -2,7 +2,11 @@
 #include "ZipFile.h"
 #include <GxEPD2_GFX.h>
 #include <GxEPD2_3C.h>
+
 #include <Fonts/FreeSans9pt7b.h>
+#include <Fonts/FreeSansBold9pt7b.h>
+#include <Fonts/FreeSansOblique9pt7b.h>
+
 #include "Arduino.h"
 
 class TextRenderer
@@ -42,6 +46,9 @@ class TextRenderer
 
         Serial.printf("Text Loaded! Data from h file: %s\n", textData);
 
+
+        // Parse text here
+
         // Init paginations
         pageStarts.clear();
         pageStarts.push_back(0); // First page starts at index 0
@@ -57,13 +64,13 @@ class TextRenderer
 
 
         // Ensure that we have calculated up to this page
-        while (pageNum >= pageStarts.size()) {
+        while (pageStarts.size() <= pageNum + 1) {
             if (!calculateNextPage()) {
                 ESP_LOGI("TextRenderer", "No more pages to calculate");
-                return; // No more pages to calculate
+                break; // We're on the last page, draw what we have
             }
             ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
-             pageStarts.size() - 1, pageStarts.back());
+                    pageStarts.size() - 1, pageStarts.back());
         }
 
         display.setRotation(1);
@@ -73,7 +80,9 @@ class TextRenderer
         display.firstPage();
 
         size_t startIndex = pageStarts[pageNum];
-        size_t endIndex = (pageNum + 1 < pageStarts.size()) ? pageStarts[pageNum + 1] : textSize;
+        size_t endIndex = (pageNum + 1 < pageStarts.size()) 
+                            ? pageStarts[pageNum + 1] 
+                            : textSize;
 
         do {
             display.fillScreen(GxEPD_WHITE);
@@ -93,6 +102,13 @@ class TextRenderer
                 int16_t x1, y1;
                 uint16_t w, h;
                 display.getTextBounds(&c, 0, 0, &x1, &y1, &w, &h);
+                
+                // //temp
+                // if (c == 'w') {
+                //     Serial.printf("char: %c, x1: %d, y1: %d, w: %d, h: %d\n", c, x1, y1, w, h);
+                //     Serial.printf("cursorX: %d, cursorY: %d\n", display.getCursorX(), display.getCursorY());
+                //     Serial.printf("display width: %d, display height: %d\n", display.width(), display.height());
+                // }
 
                 // check if char moves past right margin
                 if (display.getCursorX() + w > display.width() - MARGIN_RIGHT) {
@@ -100,6 +116,7 @@ class TextRenderer
                 }
                 
                 display.print(c);
+
 
             }
 
