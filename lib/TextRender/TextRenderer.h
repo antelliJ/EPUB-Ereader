@@ -9,14 +9,19 @@
 
 #include "Arduino.h"
 
+#include "TextBlock.h"
+#include "HtmlParser.h"
+
 class TextRenderer
 {
-    private:
+private:
     GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>& display;
-    uint8_t* textData;
-    size_t textSize;
-
+    // uint8_t* textData;
+    // size_t textSize;
     std::vector<size_t> pageStarts; // Stores the starting index of each page in textData
+
+    std::vector<TextElement> textElements;
+
     int currentPage;
 
     const int MARGIN_LEFT = 10;
@@ -24,32 +29,59 @@ class TextRenderer
     const int MARGIN_RIGHT = 10;
     const int MARGIN_BOTTOM = 10;
 
-    public:
-    TextRenderer(GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>& disp) :
-        display(disp), textData(nullptr), textSize(0), currentPage(0) {}
+    const int LINESPACE = 22;
 
-    ~TextRenderer() {
-        if (textData) {
-            ZipFile::free_file_memory(textData);
+
+    const GFXfont* getFontForStyle(SPAN_STYLE style) {
+        switch (style) {
+            case BOLD_SPAN: return &FreeSansBold9pt7b;
+            case ITALIC_SPAN: return &FreeSansOblique9pt7b;
+            default: return &FreeSans9pt7b;
         }
     }
 
+    bool is_whitespace(char c)
+    {
+    return (c == ' ' || c == '\n');
+    }
+
+public:
+    TextRenderer(GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>& disp) :
+        display(disp), currentPage(0) {}
+
+    ~TextRenderer() {}
+
     // Load text data from a file in the EPUB
-    bool loadText(ZipFile& zip, const char* filename) {
-        if (textData) {ZipFile::free_file_memory(textData);}
+    // bool loadText(ZipFile& zip, const char* filename) {
+    //     if (textData) {ZipFile::free_file_memory(textData);}
 
-        textData = zip.read_file_to_memory(filename, &textSize);
+    //     textData = zip.read_file_to_memory(filename, &textSize);
 
-        if (!textData) {
+    //     if (!textData) {
+    //         return false;
+    //     }
+
+    //     Serial.printf("Text Loaded! Data from h file: %s\n", textData);
+
+
+    //     // Parse text here
+
+    //     // Init paginations
+    //     pageStarts.clear();
+    //     pageStarts.push_back(0); // First page starts at index 0
+    //     currentPage = 0;
+
+    //     return true;
+    // }
+
+    bool loadFromHtml(HtmlParser& parser) {
+        textElements = parser.getBlocks();
+
+        if (textElements.empty()) {
             return false;
         }
-
-        Serial.printf("Text Loaded! Data from h file: %s\n", textData);
-
-
-        // Parse text here
-
-        // Init paginations
+        Serial.printf("Loaded %d text elements from HTML parser\n", textElements.size());
+        
         pageStarts.clear();
         pageStarts.push_back(0); // First page starts at index 0
         currentPage = 0;
@@ -59,22 +91,26 @@ class TextRenderer
 
     void drawPage(int pageNum) {
         ESP_LOGI("TextRenderer", "page start size: %d, pageNum: %d", pageStarts.size(), pageNum);
-        if (pageNum < 0 || !textData) return;
+        if (pageNum < 0 || textElements.empty()) return;
 
 
 
         // Ensure that we have calculated up to this page
-        while (pageStarts.size() <= pageNum + 1) {
-            if (!calculateNextPage()) {
-                ESP_LOGI("TextRenderer", "No more pages to calculate");
-                break; // We're on the last page, draw what we have
-            }
+        // while (pageStarts.size() <= pageNum + 1) {
+        //     if (!calculateNextPage()) {
+        //         ESP_LOGI("TextRenderer", "No more pages to calculate");
+        //         break; // We're on the last page, draw what we have
+        //     }
+        //     ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
+        //             pageStarts.size() - 1, pageStarts.back());
+        // }
+        while (calculateNextPage()) {
             ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
                     pageStarts.size() - 1, pageStarts.back());
         }
 
         display.setRotation(1);
-        display.setFont(&FreeSans9pt7b);
+        // display.setFont(&FreeSans9pt7b);
         display.setTextColor(GxEPD_BLACK);
         display.setFullWindow();
         display.firstPage();
@@ -82,26 +118,63 @@ class TextRenderer
         size_t startIndex = pageStarts[pageNum];
         size_t endIndex = (pageNum + 1 < pageStarts.size()) 
                             ? pageStarts[pageNum + 1] 
-                            : textSize;
+                            : textElements.size();
 
         do {
             display.fillScreen(GxEPD_WHITE);
-            display.setCursor(MARGIN_LEFT, MARGIN_TOP); // Start with a small margin
+            // display.setCursor(MARGIN_LEFT, MARGIN_TOP); // Start with a small margin
+            int16_t x = MARGIN_LEFT;
+            int16_t y = MARGIN_TOP;
 
-            for (size_t i = startIndex; i < endIndex && i < textSize; i++) {
+            for (size_t i = startIndex; i < endIndex; i++) {
                 // I skipped claude's newline and carriage checks since the library should implement it
-                char c = (char)textData[i];
-                if (c == '\n') {
-                    display.setCursor(MARGIN_LEFT, display.getCursorY() + 20);
-                    continue;
-                } else if (c == '\r') {
-                    continue; // ignore carriage returns
+                // char c = (char)textData[i];
+                const TextElement& element = textElements[i];
+
+                display.setFont(getFontForStyle(element.style));
+
+                
+
+                std::string word;
+                for (char c : element.text) {
+                    if (is_whitespace(c)) {
+                        // Print the current word
+                        if (!word.empty()) {
+                            if (!renderWord(word.c_str(), x, y, LINESPACE)) {
+                                Serial.printf("Word '%s' does not fit on page %d, moving to next page\n", word.c_str(), pageNum);
+                                goto page_full;
+                            }
+                            word.clear();
+                        }
+                        x += 5;
+                        // Print the space or handle newline
+                        // if (c == ' ') {
+                        //     display.print(' ');
+                        // } else if (c == '\n') {
+                        //     display.println();
+                        // }
+                    } else {
+                        word += c;
+                    }
+                }
+
+                // Print the last word in the element
+                if (!word.empty()) {
+                    if (!renderWord(word.c_str(), x, y, LINESPACE)) {
+                        Serial.printf("Word '%s' does not fit on page %d, moving to next page\n", word.c_str(), pageNum);
+                        goto page_full;
+                    }
+                }
+
+                if (element.isBlockEnd) {
+                    x = MARGIN_LEFT;
+                    y += LINESPACE; // Move to next line after a block
                 }
                 
                 //This may be unoptimized since it checks for every character, 
-                int16_t x1, y1;
-                uint16_t w, h;
-                display.getTextBounds(&c, 0, 0, &x1, &y1, &w, &h);
+                // int16_t x1, y1;
+                // uint16_t w, h;
+                // display.getTextBounds(&c, 0, 0, &x1, &y1, &w, &h);
                 
                 // //temp
                 // if (c == 'w') {
@@ -111,20 +184,23 @@ class TextRenderer
                 // }
 
                 // check if char moves past right margin
-                if (display.getCursorX() + w > display.width() - MARGIN_RIGHT) {
-                    display.setCursor(MARGIN_LEFT, display.getCursorY() + 20);
-                }
+                // if (display.getCursorX() + w > display.width() - MARGIN_RIGHT) {
+                //     display.setCursor(MARGIN_LEFT, display.getCursorY() + 20);
+                // }
                 
-                display.print(c);
+                // display.print(c);
 
 
             }
 
+            page_full:
+
             //draw page num
+            display.setFont(&FreeSans9pt7b);
             char pageInfo[32];
-            snprintf(pageInfo, sizeof(pageInfo), "page %d/%d", pageNum + 1, pageStarts.size());
-            int16_t x = (display.width() -strlen(pageInfo)*6)/2;
-            display.setCursor(x, display.height() - MARGIN_BOTTOM);
+            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
+            int16_t px = (display.width() -strlen(pageInfo)*6)/2;
+            display.setCursor(px, display.height() - MARGIN_BOTTOM);
             display.print(pageInfo);
 
 
@@ -133,60 +209,112 @@ class TextRenderer
         display.hibernate();
         currentPage = pageNum;
     }
+private:
+    bool renderWord(const char* word, int16_t& x, int16_t& y, int lineSpace) {
+        //technically there is a bug where if a single word is longer than the entire line it will go offscreen (after drawing a newline), but I think this is an edge case that can be ignored for now
+        int16_t x1, y1;
+        uint16_t w, h;
+        display.getTextBounds(word, x, y, &x1, &y1, &w, &h);
 
+        // word wrap
+        if ((x+w) > (display.width() - MARGIN_RIGHT)) {
+            x = MARGIN_LEFT;
+            y += lineSpace;
+
+            // recalculate bounds - I have no clue why this fixes the double wrapping bug but it does
+            display.getTextBounds(word, x, y, &x1, &y1, &w, &h);
+
+            Serial.printf("Word '%s' wrapped to next line on page %d\n", word, currentPage);
+
+            // check if stil on page
+            if (y> display.height() - MARGIN_BOTTOM - lineSpace) {
+                return false; // word doesn't fit on this page
+            }
+        }
+
+        display.setCursor(x, y);
+        display.print(word);
+        x += w;
+        return true;
+    }
     // Calculate where the next page should start
     bool calculateNextPage() {
         if (pageStarts.empty()) return false;
 
-        size_t lastPageStart = pageStarts.back();
-        if (lastPageStart >= textSize) return false; // have already reached the end
+        size_t lastStart  = pageStarts.back();
+        if (lastStart  >= textElements.size()) return false; // have already reached the end
 
         // Simulate rendering to find where the next page ends
         int16_t x = MARGIN_LEFT;
         int16_t y = MARGIN_TOP;
-        size_t i = lastPageStart;
-        size_t lastBreak = lastPageStart; // last possible break (space or newline)
+        
+        for (size_t i = lastStart; i < textElements.size(); i++) {
+            const TextElement& element = textElements[i];
 
-        display.setFont(&FreeSans9pt7b);
+            const GFXfont* font = getFontForStyle(element.style);
+            display.setFont(font);
 
-        for (; i < textSize; i++) {
-            char c = (char)textData[i];
+            bool wentNewline = false;
 
-            if (c == '\n') {
-                lastBreak = i + 1; // break after newline
-                x = MARGIN_LEFT;
-                y += 20;
-            } else if (c == ' ') {
-                lastBreak = i + 1; // break after space
+            std::string word;
+            for (char c : element.text) {
+                if (is_whitespace(c)) {
+                    if (!word.empty()) {
+                        int16_t x1, y1;
+                        uint16_t w, h;
+                        display.getTextBounds(word.c_str(), x, y, &x1, &y1, &w, &h);
+
+                        if (x + w > display.width() - MARGIN_RIGHT) {
+                            x = MARGIN_LEFT;
+                            y += LINESPACE;
+                            wentNewline = true;
+
+                            if ((y + h) > display.height() - MARGIN_BOTTOM) {
+                                pageStarts.push_back(i);
+                                return true; // next page starts at this element
+                            }
+                        }
+                        x += w; // add space width of the word
+                        word.clear();
+                    } 
+                    x += 5; // space between each word - this is a simplification and could be improved by measuring actual space width
+                } else {
+                    word += c;
+                }
+            }
+            if (!word.empty() && !wentNewline) {
                 int16_t x1, y1;
                 uint16_t w, h;
-                display.getTextBounds(&c, x, y, &x1, &y1, &w, &h);
-                x += w;
-            } else if (c != '\r') {
-                int16_t x1, y1;
-                uint16_t w, h;
-                display.getTextBounds(&c, x, y, &x1, &y1, &w, &h);
+                display.getTextBounds(word.c_str(), x, y, &x1, &y1, &w, &h);
+
+                if ((x + w) > (display.width() - MARGIN_RIGHT)) {
+                    x = MARGIN_LEFT;
+                    y += LINESPACE;
+                    wentNewline = true;
+                }
+
+                if ((y + h) > (display.height() - MARGIN_BOTTOM)) {
+                        pageStarts.push_back(i); // next page starts at end of text
+                        return true;
+                }
+
                 x += w;
             }
 
-            // If we exceed the right margin, wrap to next line
-            if (x > display.width() - MARGIN_RIGHT) {
+            if (element.isBlockEnd && !wentNewline) {
                 x = MARGIN_LEFT;
-                y += 20;
-            }
+                y += LINESPACE; // Move to next line after a block
 
-            // If we exceed the bottom margin, start a new page
-            if (y > display.height() - MARGIN_BOTTOM - 20) {
-                size_t pageBreak = (lastBreak > lastPageStart) ? lastBreak : i;
-                pageStarts.push_back(pageBreak);
-                return true;
+                if ((y + LINESPACE) > (display.height() - MARGIN_BOTTOM)) {
+                    pageStarts.push_back(i+1); // next page starts at end of text
+                    return true;
+                }
             }
         }
-
-        // If we reach the end of the text, no more pages
         return false;
     }
 
+public:
     void nextPage(){
         if (currentPage < pageStarts.size() - 1) {
             drawPage(currentPage + 1);

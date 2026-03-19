@@ -35,6 +35,7 @@
 
 #include "sampleReads.h"
 #include "TextRenderer.h"
+#include "HtmlParser.h"
 
 #define EPD_MOSI 11
 #define EPD_SCK  12
@@ -91,6 +92,8 @@ void setup()
   Serial.begin(115200);
   esp_log_level_set("TextRenderer", ESP_LOG_INFO); // Set log level to INFO for all tags
 
+  display.setTextWrap(false);
+
   if (!LittleFS.begin()) {
     Serial.println("An Error has occurred while mounting LittleFS");
     return;
@@ -129,15 +132,30 @@ void epub_read_test(void *parameter) {
   // printChapterToSerial("/littlefs/starwars.epub", "index_split_000.html");
 
 
+  // ZipFile zip("/littlefs/bold-italics-test.epub");
+  ZipFile zip("/littlefs/starwars.epub");
+
+  // if (renderer->loadText(zip, "index.html")) {
+  //   Serial.println("Text loaded successfully!");
+  //   renderer->drawPage(0);
+  // } else {
+  //   Serial.println("Failed to load text from EPUB.");
+  // }
+
+  HtmlParser parser;
+  // for bold-italics test its just index.html, for starwars it is index_split_000.html
+  if (!parser.parseFromZip(zip, "index_split_000.html")) {
+    Serial.println("Failed to parse HTML from EPUB.");
+    vTaskDelete(NULL); // Delete the task if parsing fails
+    return;
+  }
 
   renderer = new TextRenderer(display);
-  ZipFile zip("/littlefs/bold-italics-test.epub");
-
-  if (renderer->loadText(zip, "index.html")) {
-    Serial.println("Text loaded successfully!");
+  if (renderer->loadFromHtml(parser)) {
+    Serial.println("Text loaded successfully from HTML parser!");
     renderer->drawPage(0);
   } else {
-    Serial.println("Failed to load text from EPUB.");
+    Serial.println("Failed to load text from HTML parser.");
   }
 
   vTaskDelete(NULL); // Delete the task when done
