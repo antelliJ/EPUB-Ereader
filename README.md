@@ -8,6 +8,7 @@ This project uses the arduino framework on PlatformIO, with the graphics library
 Currently no support for images, or CSS content,
 
 Currently all books are loaded from the data folder in LittleFS and manually loaded. Eventually there will be a file loader for SD Card content
+  The data folder also currently contains other test files relevant for testing the unzipping, parsing, and rendering process
 
 ## How does it work?
 Like atomic14's project, this uses miniz to unzip the files into PSRAM
