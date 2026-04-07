@@ -40,6 +40,9 @@
 #include "display_config.h"
 
 #include "epub.h"
+#include "EpubReader.h"
+
+#include "State.h"
 
 #define EPD_MOSI 11
 #define EPD_SCK  12
@@ -68,6 +71,8 @@
 
 DISPLAY_TYPE display(DISPLAY_DRIVER(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
+RTC_DATA_ATTR EpubListState epub_list_state;
+
 SPIClass hspi(HSPI);
 
 // Pagination variables
@@ -83,6 +88,7 @@ bool btnPrevPressed = false;
 const unsigned long HOLD_DURATION = 1000; // 1 second hold duration for page turn rendering
 
 TextRenderer<DISPLAY_TYPE>* renderer = nullptr;
+static EpubReader *reader = nullptr;
 
 void drawTextPage(int pageNum);
 void epub_read_test(void *parameter);
@@ -143,39 +149,57 @@ void epub_read_test(void *parameter) {
 
   // printChapterToSerial("/littlefs/starwars.epub", "index_split_000.html");
 
-  // Epub epub("/littlefs/starwars.epub");
+  Epub epub("/littlefs/starwars.epub");
+  if (!epub.load()) {
+    Serial.println("Failed to load EPUB file.");
+    vTaskDelete(NULL); // Delete the task if loading fails
+    return;
+  }
+  Serial.printf("EPUB Title: %s\n", epub.get_title().c_str());
+
+  // prine elements in spine
+  for (int i = 0; i < epub.get_spine_items_count(); i++) {
+    Serial.printf("Spine item %d: %s\n", i, epub.get_spine_item(i).c_str());
+  }
+
 
 
   // ZipFile zip("/littlefs/bold-italics-test.epub");
-  ZipFile zip("/littlefs/starwars.epub");
-
+  
   // if (renderer->loadText(zip, "index.html")) {
-  //   Serial.println("Text loaded successfully!");
-  //   renderer->drawPage(0);
-  // } else {
-  //   Serial.println("Failed to load text from EPUB.");
+    //   Serial.println("Text loaded successfully!");
+    //   renderer->drawPage(0);
+    // } else {
+      //   Serial.println("Failed to load text from EPUB.");
+      // }
+      
+  // ZipFile zip("/littlefs/starwars.epub");
+  // HtmlParser parser;
+  // // for bold-italics test its just index.html, for starwars it is index_split_000.html
+  // if (!parser.parseFromZip(zip, "index_split_000.html")) {
+  //   Serial.println("Failed to parse HTML from EPUB.");
+  //   vTaskDelete(NULL); // Delete the task if parsing fails
+  //   return;
   // }
 
-  HtmlParser parser;
-  // for bold-italics test its just index.html, for starwars it is index_split_000.html
-  if (!parser.parseFromZip(zip, "index_split_000.html")) {
-    Serial.println("Failed to parse HTML from EPUB.");
-    vTaskDelete(NULL); // Delete the task if parsing fails
-    return;
-  }
-
-  renderer = new TextRenderer<DISPLAY_TYPE>(display);
-  if (renderer->loadFromHtml(parser)) {
-    Serial.println("Text loaded successfully from HTML parser!");
-    renderer->drawPage(0);
-    totalPages = renderer->getTotalPages();
-  } else {
-    Serial.println("Failed to load text from HTML parser.");
-  }
+  // renderer = new TextRenderer<DISPLAY_TYPE>(display);
+  // if (renderer->loadFromHtml(parser)) {
+  //   Serial.println("Text loaded successfully from HTML parser!");
+  //   renderer->drawPage(0);
+  //   totalPages = renderer->getTotalPages();
+  // } else {
+  //   Serial.println("Failed to load text from HTML parser.");
+  // }
 
   vTaskDelete(NULL); // Delete the task when done
 
 }
+
+// void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer) {
+//   if (!reader) {
+//     reader = new EpubReader(epub_list_state, renderer);
+//   }
+// }
 
 const char HelloWorld[] = "Hello World (again)!";
 

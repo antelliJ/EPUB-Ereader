@@ -296,3 +296,39 @@ std::string &Epub::get_spine_item(int spine_index)
     // if exception is catched return last page
     return m_spine.at(spine_index).second;
 }
+
+Epub::Epub(const std::string &path) : m_path(path)
+{
+}
+
+// load in the meta data for the epub file
+bool Epub::load()
+{
+  ZipFile zip(m_path.c_str());
+  std::string content_opf_file;
+  if (!find_content_opf_file(zip, content_opf_file))
+  {
+    #ifndef UNIT_TEST
+      ESP_LOGE(TAG, "Could not open ePub. Restarting in 10 secs.");
+      vTaskDelay(pdMS_TO_TICKS(1000*10));
+      esp_restart();
+    #endif
+    return false;
+  }
+  // get the base path for the content
+  m_base_path = content_opf_file.substr(0, content_opf_file.find_last_of('/') + 1);
+  if (!parse_content_opf(zip, content_opf_file))
+  {
+    return false;
+  }
+//   if (!parse_toc_ncx_file(zip))
+//   {
+//     return false;
+//   }
+  return true;
+}
+
+const std::string &Epub::get_title()
+{
+  return m_title;
+}

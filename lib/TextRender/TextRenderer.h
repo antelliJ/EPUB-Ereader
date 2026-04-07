@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include "ZipFile.h"
 #include <GxEPD2_GFX.h>
@@ -12,6 +14,8 @@
 
 #include "TextBlock.h"
 #include "HtmlParser.h"
+
+#include "display_config.h"
 
 template<typename DisplayType>
 class TextRenderer
@@ -37,17 +41,19 @@ private:
 
 
     const GFXfont* getFontForStyle(SPAN_STYLE style) {
-        switch (style) {
-            case BOLD_SPAN: return &FreeSansBold9pt7b;
-            case ITALIC_SPAN: return &FreeSansOblique9pt7b;
-            // default: return &FreeSans9pt7b;
-            default: 
-                switch(DISPLAY_DRIVER){
-                    case GxEPD2_583c_GDEQ0583Z31: return &FreeSans9pt7b;
-                    default: return &TomThumb;
-                }
-             // For testing, use a smaller font to fit more text and see the pagination in action
-        }
+        #ifdef USE_3C_DISPLAY
+            switch (style) {
+                case BOLD_SPAN: return &FreeSansBold9pt7b;
+                case ITALIC_SPAN: return &FreeSansOblique9pt7b;
+                default: return &FreeSans9pt7b;
+            }
+        #else
+            switch(style) {
+                case BOLD_SPAN: return &FreeSansBold9pt7b;
+                case ITALIC_SPAN: return &FreeSansOblique9pt7b;
+                default: return &TomThumb;
+            }
+        #endif
     }
 
     bool is_whitespace(char c)
@@ -114,11 +120,7 @@ public:
         //     ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
         //             pageStarts.size() - 1, pageStarts.back());
         // }
-        int temp_loop_max = 1000; // safety to prevent infinite loops in case of bugs
-        while (calculateNextPage() && temp_loop_max-- > 0) {
-            ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
-                    pageStarts.size() - 1, pageStarts.back());
-        }
+        calculateAllPages();
 
         display.setRotation(1);
         // display.setFont(&FreeSans9pt7b);
@@ -340,4 +342,12 @@ public:
 
     int getCurrentPage() { return currentPage; }
     int getTotalPages() { return pageStarts.size(); }
+
+    // Remember this only calculates pages of the html given, not of the entire epub, so it should be called after loading each section
+    // Also it may be a bit slow since it simulates rendering each page, but it works
+    // Loop max to add safety to prevent infinite loops in case of bugs
+    bool calculateAllPages(int loop_max = 1000) {
+        while (calculateNextPage() && loop_max-- > 0);
+        return pageStarts.size() > 1; // returns true if there is more than one page
+    }
 };

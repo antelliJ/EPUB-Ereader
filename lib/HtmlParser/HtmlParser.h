@@ -124,6 +124,7 @@ bool is_whitespace(char c)
   }
 public:
   HtmlParser(){}
+  HtmlParser(const char *html, int length, const std::string &base_path);
 
   ~HtmlParser() {
     // Clean up any dynamically allocated memory if needed
@@ -160,5 +161,12 @@ public:
     return blocks;
   }
 };
+
+HtmlParser::HtmlParser(const char *html, int length, const std::string &base_path)
+{
+  //actually having a base path would probably be needed for images and other resources, but for now we can ignore it and just assume all resources are in the same directory as the html file
+  // m_base_path = base_path;
+  parseHtml(html, length);
+}
 
 #endif
