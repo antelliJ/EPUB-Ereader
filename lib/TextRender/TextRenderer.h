@@ -6,16 +6,20 @@
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold9pt7b.h>
 #include <Fonts/FreeSansOblique9pt7b.h>
+#include <Fonts/TomThumb.h>
 
 #include "Arduino.h"
 
 #include "TextBlock.h"
 #include "HtmlParser.h"
 
+template<typename DisplayType>
 class TextRenderer
 {
 private:
-    GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>& display;
+    // GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>& display;
+    DisplayType& display;
+
     // uint8_t* textData;
     // size_t textSize;
     std::vector<size_t> pageStarts; // Stores the starting index of each page in textData
@@ -36,7 +40,13 @@ private:
         switch (style) {
             case BOLD_SPAN: return &FreeSansBold9pt7b;
             case ITALIC_SPAN: return &FreeSansOblique9pt7b;
-            default: return &FreeSans9pt7b;
+            // default: return &FreeSans9pt7b;
+            default: 
+                switch(DISPLAY_DRIVER){
+                    case GxEPD2_583c_GDEQ0583Z31: return &FreeSans9pt7b;
+                    default: return &TomThumb;
+                }
+             // For testing, use a smaller font to fit more text and see the pagination in action
         }
     }
 
@@ -46,7 +56,7 @@ private:
     }
 
 public:
-    TextRenderer(GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>& disp) :
+    TextRenderer(DisplayType& disp) :
         display(disp), currentPage(0) {}
 
     ~TextRenderer() {}
@@ -90,7 +100,7 @@ public:
     }
 
     void drawPage(int pageNum) {
-        ESP_LOGI("TextRenderer", "page start size: %d, pageNum: %d", pageStarts.size(), pageNum);
+        Serial.printf("TextRenderer: page start size: %d, pageNum: %d\n", pageStarts.size(), pageNum);
         if (pageNum < 0 || textElements.empty()) return;
 
 
@@ -104,7 +114,8 @@ public:
         //     ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
         //             pageStarts.size() - 1, pageStarts.back());
         // }
-        while (calculateNextPage()) {
+        int temp_loop_max = 1000; // safety to prevent infinite loops in case of bugs
+        while (calculateNextPage() && temp_loop_max-- > 0) {
             ESP_LOGI("TextRenderer", "Calculated page %d, starts at char %d", 
                     pageStarts.size() - 1, pageStarts.back());
         }
@@ -196,7 +207,7 @@ public:
             page_full:
 
             //draw page num
-            display.setFont(&FreeSans9pt7b);
+            // display.setFont(&FreeSans9pt7b);
             char pageInfo[32];
             snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
             int16_t px = (display.width() -strlen(pageInfo)*6)/2;

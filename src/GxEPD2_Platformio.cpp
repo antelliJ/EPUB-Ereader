@@ -21,8 +21,8 @@
 #include <GxEPD2_BW.h>
 #include <GxEPD2_3C.h>
 // Ima just comment these out
-#include <GxEPD2_4C.h>
-#include <GxEPD2_7C.h>
+// #include <GxEPD2_4C.h>
+// #include <GxEPD2_7C.h>
 
 
 #include <Fonts/FreeMonoBold9pt7b.h> // First Font test
@@ -36,6 +36,10 @@
 #include "sampleReads.h"
 #include "TextRenderer.h"
 #include "HtmlParser.h"
+
+#include "display_config.h"
+
+#include "epub.h"
 
 #define EPD_MOSI 11
 #define EPD_SCK  12
@@ -58,7 +62,11 @@
 // GxEPD2_3C<GxEPD2_583c_Z83, 480> display(GxEPD2_DRIVER_CLASS(/*CS=*/ EPD_CS, /*DC=*/ EPD_DC, /*RST=*/ EPD_RST, /*BUSY=*/ EPD_BUSY));
 
 // GxEPD2_3C<GxEPD2_583c_Z83, 480> display(GxEPD2_583c_Z83(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)); // THIS IS WORKING :D
-  GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>display(GxEPD2_583c_GDEQ0583Z31(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)); // This ALSO works, maybe a TAD faster ??
+
+  // GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>display(GxEPD2_583c_GDEQ0583Z31(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)); // This ALSO works, maybe a TAD faster ??
+// GxEPD2_BW<GxEPD2_420_GDEY042T81, 400> display(GxEPD2_420_GDEY042T81(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)); // This is just for testing the black and white display, not used in main code
+
+DISPLAY_TYPE display(DISPLAY_DRIVER(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 SPIClass hspi(HSPI);
 
@@ -74,7 +82,7 @@ bool btnPrevPressed = false;
 
 const unsigned long HOLD_DURATION = 1000; // 1 second hold duration for page turn rendering
 
-TextRenderer* renderer = nullptr;
+TextRenderer<DISPLAY_TYPE>* renderer = nullptr;
 
 void drawTextPage(int pageNum);
 void epub_read_test(void *parameter);
@@ -110,12 +118,16 @@ void setup()
 
   // Serial.printf("PSRAM Total heap %d, PSRAM Free Heap %d\n",ESP.getPsramSize(),ESP.getFreePsram());
 
-  display.init(115200, true, 2, false); // USE THIS for Waveshare boards with "clever" reset circuit, 2ms reset pulse
+  //TODO
+  //NEED THIS FOR 3C
+  // display.init(115200, true, 2, false); // USE THIS for Waveshare boards with "clever" reset circuit, 2ms reset pulse
   
+  display.init(115200,true,50,false);
+
   // helloWorld();
   // display.hibernate();
 
-  // drawTextPage(0);
+  // drawTextPage(0); // Draw the first page of sample text to test
 
   // clearWindow();
 
@@ -130,6 +142,8 @@ void epub_read_test(void *parameter) {
   // printChapterToSerial("/littlefs/starwars.epub", "META-INF/container.xml");
 
   // printChapterToSerial("/littlefs/starwars.epub", "index_split_000.html");
+
+  // Epub epub("/littlefs/starwars.epub");
 
 
   // ZipFile zip("/littlefs/bold-italics-test.epub");
@@ -150,10 +164,11 @@ void epub_read_test(void *parameter) {
     return;
   }
 
-  renderer = new TextRenderer(display);
+  renderer = new TextRenderer<DISPLAY_TYPE>(display);
   if (renderer->loadFromHtml(parser)) {
     Serial.println("Text loaded successfully from HTML parser!");
     renderer->drawPage(0);
+    totalPages = renderer->getTotalPages();
   } else {
     Serial.println("Failed to load text from HTML parser.");
   }
@@ -186,6 +201,16 @@ void helloWorld()
   while (display.nextPage());
 }
 
+int wrap(int start, int end, int wrapNum) {
+    if (wrapNum < start) {
+        return end;
+    } else if (wrapNum > end) {
+      return start;
+    }
+    return wrapNum;
+}
+
+
 void loop() {
   if (digitalRead(NEXT_BUTTON_PIN)==LOW){
     if (!btnNextPressed) {
@@ -193,7 +218,7 @@ void loop() {
       btnNextPressTime = millis();
 
       if (renderer) {
-        currentPage++;
+        currentPage = wrap(0, totalPages - 1, currentPage + 1);
         Serial.printf("Next button pressed! Current page: %d\n", currentPage);
       }
     } else {
@@ -228,7 +253,8 @@ void loop() {
       btnPrevPressTime = millis();
 
       if (renderer) {
-        currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
+        // currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
+        currentPage = wrap(0, totalPages - 1, currentPage - 1); // Wrap around using the helper function
         Serial.printf("Previous button pressed! Current page: %d\n", currentPage);
       }
     } else {
@@ -258,6 +284,9 @@ void loop() {
   delay(100); // Small delay to avoid busy looping
 };
 
+
+
+
 void clearWindow() { // UNUSED
   display.firstPage();
   do
@@ -268,34 +297,3 @@ void clearWindow() { // UNUSED
 }
 
 
-void drawTextPage(int pageNum) {
-  display.setRotation(1);
-  display.setFont(&FreeSans9pt7b);
-  display.setTextColor(GxEPD_BLACK);
-  display.setFullWindow();
-  display.firstPage();
-
-  int charIndex = pageStarts[pageNum];
-
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(10, 30); // Start with a small margin
-
-    // Logic to print character by character and check for overflow
-    for (int i = charIndex; longStory[i] != '\0'; i++) {
-      display.print(longStory[i]);
-
-      // If we hit the bottom of the screen
-      if (display.getCursorY() > display.height() - 20) {
-        // Record where the NEXT page should start if we haven't yet
-        if (pageNum + 1 < 10) {
-          pageStarts[pageNum + 1] = i + 1;
-          if (pageNum + 1 > totalPages) totalPages = pageNum + 1;
-        }
-        break; // Stop drawing this page
-      }
-    }
-  } while (display.nextPage());
-
-  display.hibernate();
-}
