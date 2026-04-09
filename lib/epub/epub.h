@@ -118,6 +118,7 @@ std::string normalise_path(const std::string &path)
 #include "Epub.h"
 
 static const char *TAG = "EPUB";
+// static char *TAG = "EPUB";
 
 bool Epub::find_content_opf_file(ZipFile &zip, std::string &content_opf_file)
 {
@@ -269,6 +270,7 @@ uint8_t *Epub::get_item_contents(const std::string &item_href, size_t *size)
 {
   ZipFile zip(m_path.c_str());
   std::string path = normalise_path(item_href);
+  Serial.printf("Getting item contents for %s\n", path.c_str());
   auto content = zip.read_file_to_memory(path.c_str(), size);
   if (!content)
   {

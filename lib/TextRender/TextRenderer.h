@@ -106,8 +106,8 @@ public:
     }
 
     void drawPage(int pageNum) {
-        Serial.printf("TextRenderer: page start size: %d, pageNum: %d\n", pageStarts.size(), pageNum);
-        if (pageNum < 0 || textElements.empty()) return;
+        Serial.printf("TextRenderer: page start size: %d, pageNum: %d, textElements size: %d\n", pageStarts.size(), pageNum, textElements.size());
+        if (pageNum < 0) return;
 
 
 
@@ -127,6 +127,15 @@ public:
         display.setTextColor(GxEPD_BLACK);
         display.setFullWindow();
         display.firstPage();
+
+        if (textElements.empty()) {
+            display.fillScreen(GxEPD_WHITE);
+            display.setCursor(MARGIN_LEFT, MARGIN_TOP);
+            display.print("No text to display");
+            display.nextPage();
+            display.hibernate();
+            return;
+        }
 
         size_t startIndex = pageStarts[pageNum];
         size_t endIndex = (pageNum + 1 < pageStarts.size()) 
@@ -350,4 +359,6 @@ public:
         while (calculateNextPage() && loop_max-- > 0);
         return pageStarts.size() > 1; // returns true if there is more than one page
     }
+
+    DisplayType& getDisplay() { return display; }
 };

@@ -39,10 +39,13 @@
 
 #include "display_config.h"
 
-#include "epub.h"
+// #include "epub.h" // This is just for testing, not used in main code (EpubReader loads it)
 #include "EpubReader.h"
 
 #include "State.h"
+
+#include "SD.h"
+#define SD_CS 5
 
 #define EPD_MOSI 11
 #define EPD_SCK  12
@@ -105,6 +108,7 @@ void setup()
 
   Serial.begin(115200);
   esp_log_level_set("TextRenderer", ESP_LOG_INFO); // Set log level to INFO for all tags
+  esp_log_level_set("EPUB", ESP_LOG_INFO);
 
   display.setTextWrap(false);
 
@@ -149,18 +153,29 @@ void epub_read_test(void *parameter) {
 
   // printChapterToSerial("/littlefs/starwars.epub", "index_split_000.html");
 
-  Epub epub("/littlefs/starwars.epub");
-  if (!epub.load()) {
-    Serial.println("Failed to load EPUB file.");
-    vTaskDelete(NULL); // Delete the task if loading fails
-    return;
-  }
-  Serial.printf("EPUB Title: %s\n", epub.get_title().c_str());
+  // Epub epub("/littlefs/starwars.epub");
+  // if (!epub.load()) {
+  //   Serial.println("Failed to load EPUB file.");
+  //   vTaskDelete(NULL); // Delete the task if loading fails
+  //   return;
+  // }
+  // Serial.printf("EPUB Title: %s\n", epub.get_title().c_str());
 
-  // prine elements in spine
-  for (int i = 0; i < epub.get_spine_items_count(); i++) {
-    Serial.printf("Spine item %d: %s\n", i, epub.get_spine_item(i).c_str());
-  }
+  // // prine elements in spine
+  // for (int i = 0; i < epub.get_spine_items_count(); i++) {
+  //   Serial.printf("Spine item %d: %s\n", i, epub.get_spine_item(i).c_str());
+  // }
+
+  // create test Epub List Item from starwars epub
+  EpubListItem item;
+  strncpy(item.path, "/littlefs/starwars.epub", MAX_PATH_SIZE);
+  renderer = new TextRenderer<DISPLAY_TYPE>(display);
+  reader = new EpubReader(item, renderer);
+  reader->load();
+  Serial.printf("Debug: Epub Loaded\n");
+  totalPages = reader->get_total_pages();
+  Serial.printf("Debug: Total Pages: %d -- Begin rendering\n", totalPages);
+  reader->render();
 
 
 
@@ -243,6 +258,7 @@ void loop() {
 
       if (renderer) {
         currentPage = wrap(0, totalPages - 1, currentPage + 1);
+        reader->next();
         Serial.printf("Next button pressed! Current page: %d\n", currentPage);
       }
     } else {
@@ -253,7 +269,8 @@ void loop() {
         display.init(115200, true, 2, false);
 
         if (renderer) {
-          renderer->drawPage(currentPage);
+          // renderer->drawPage(currentPage);
+          reader->render();
         }
 
         btnNextPressed = false;
@@ -280,6 +297,7 @@ void loop() {
         // currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
         currentPage = wrap(0, totalPages - 1, currentPage - 1); // Wrap around using the helper function
         Serial.printf("Previous button pressed! Current page: %d\n", currentPage);
+        reader->prev();
       }
     } else {
       if (millis() - btnPrevPressTime >= HOLD_DURATION) {
@@ -288,7 +306,8 @@ void loop() {
         display.init(115200, true, 2, false);
 
         if (renderer) {
-          renderer->drawPage(currentPage);
+          // renderer->drawPage(currentPage);
+          reader->render();
         }
 
         btnNextPressed = false;
