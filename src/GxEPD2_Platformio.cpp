@@ -1,5 +1,15 @@
 #include <Arduino.h>
 #include "LittleFS.h"
+// TODO: 
+// fix discrepencies in TextRenderer of calculateNextPage and regular rendering, 
+// since a little off on where starting and ending -- something with cutting off newline to put on next page?
+//
+// fix page numbering in text render and its pointer
+// section_page_to_global_page and the others should use a hashmap somewhere
+// add a "go to page" feature that uses the global page number to jump to the correct section and page within that section (for toc)
+// make menu stuff
+// add table of contents support in epub reader
+
 // GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
 // Display Library example for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
@@ -167,11 +177,19 @@ void epub_read_test(void *parameter) {
   // }
 
   // create test Epub List Item from starwars epub
-  EpubListItem item;
+  // use default values for EpubListItem
+  EpubListItem item = {}; // zero initialize fields
   strncpy(item.path, "/littlefs/starwars.epub", MAX_PATH_SIZE);
+  item.current_page = 0;
+  item.current_section = 0; // set to 1 to start from the first section (after cover)
+  item.pages_in_current_section = 0;
+
+  Serial.printf("Debug: free heap: %d\n", ESP.getFreeHeap());
+  Serial.printf("Debug: available PSRAM heap: %d\n", ESP.getFreePsram());
   renderer = new TextRenderer<DISPLAY_TYPE>(display);
   reader = new EpubReader(item, renderer);
   reader->load();
+
   Serial.printf("Debug: Epub Loaded\n");
   totalPages = reader->get_total_pages();
   Serial.printf("Debug: Total Pages: %d -- Begin rendering\n", totalPages);
@@ -259,7 +277,8 @@ void loop() {
       if (renderer) {
         currentPage = wrap(0, totalPages - 1, currentPage + 1);
         reader->next();
-        Serial.printf("Next button pressed! Current page: %d\n", currentPage);
+        Serial.printf("Next button pressed! Current page (of section): %d\n", reader->get_current_page());
+        // Serial.printf("Next button pressed! Current page (global): %d\n", reader->get_current_page_global());
       }
     } else {
       if(millis() - btnNextPressTime >= HOLD_DURATION) {
@@ -296,12 +315,13 @@ void loop() {
       if (renderer) {
         // currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
         currentPage = wrap(0, totalPages - 1, currentPage - 1); // Wrap around using the helper function
-        Serial.printf("Previous button pressed! Current page: %d\n", currentPage);
         reader->prev();
+        Serial.printf("Previous button pressed! Current page (of section): %d\n", reader->get_current_page());
       }
     } else {
       if (millis() - btnPrevPressTime >= HOLD_DURATION) {
-        Serial.printf("Rendering previous page: %d\n", currentPage);
+        Serial.printf("Rendering previous page!\n");
+        
         
         display.init(115200, true, 2, false);
 

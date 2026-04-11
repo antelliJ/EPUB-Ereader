@@ -4,6 +4,31 @@
 #include "tinyxml2.h"
 #include "ZipFile.h"
 
+#ifndef HALLUCINATION
+#define HALLUCINATION
+#include <esp_heap_caps.h>
+
+void* operator new(size_t size) {
+  void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!ptr) ptr = malloc(size);
+  return ptr;
+}
+
+void operator delete(void* ptr) {
+  if (ptr) heap_caps_free(ptr);
+}
+
+void* operator new[](size_t size) {
+  void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!ptr) ptr = malloc(size);
+  return ptr;
+}
+
+void operator delete[](void* ptr) {
+  if (ptr) heap_caps_free(ptr);
+}
+#endif
+
 static const char *DEBUGTAG = "HTMLPARSE";
 
 const char *HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};

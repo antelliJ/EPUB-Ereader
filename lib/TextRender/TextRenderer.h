@@ -12,6 +12,31 @@
 
 #include "Arduino.h"
 
+#ifndef HALLUCINATION // courtesy of Grok
+#define HALLUCINATION
+#include <esp_heap_caps.h>
+
+void* operator new(size_t size) {
+  void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!ptr) ptr = malloc(size);
+  return ptr;
+}
+
+void operator delete(void* ptr) {
+  if (ptr) heap_caps_free(ptr);
+}
+
+void* operator new[](size_t size) {
+  void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!ptr) ptr = malloc(size);
+  return ptr;
+}
+
+void operator delete[](void* ptr) {
+  if (ptr) heap_caps_free(ptr);
+}
+#endif
+
 #include "TextBlock.h"
 #include "HtmlParser.h"
 
@@ -38,6 +63,9 @@ private:
     const int MARGIN_BOTTOM = 10;
 
     const int LINESPACE = 22;
+
+    int global_total_pages = 0;
+    int global_current_page = 0;
 
 
     const GFXfont* getFontForStyle(SPAN_STYLE style) {
@@ -66,6 +94,11 @@ public:
         display(disp), currentPage(0) {}
 
     ~TextRenderer() {}
+
+    void set_global_pages(int *total_pages_ptr, int *current_page_ptr) {
+    global_total_pages = *total_pages_ptr;
+    global_current_page = *current_page_ptr;
+  }
 
     // Load text data from a file in the EPUB
     // bool loadText(ZipFile& zip, const char* filename) {
@@ -132,6 +165,14 @@ public:
             display.fillScreen(GxEPD_WHITE);
             display.setCursor(MARGIN_LEFT, MARGIN_TOP);
             display.print("No text to display");
+
+            char pageInfo[32];
+            // snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
+            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", global_current_page + 1, global_total_pages);
+            int16_t px = (display.width() -strlen(pageInfo)*6)/2;
+            display.setCursor(px, display.height() - MARGIN_BOTTOM);
+            display.print(pageInfo);
+
             display.nextPage();
             display.hibernate();
             return;
@@ -219,8 +260,10 @@ public:
 
             //draw page num
             // display.setFont(&FreeSans9pt7b);
+            // technically pageNum should be calculated, and the total pages is calculated by EpubReader
             char pageInfo[32];
-            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
+            // snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
+            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", global_current_page + 1, global_total_pages);
             int16_t px = (display.width() -strlen(pageInfo)*6)/2;
             display.setCursor(px, display.height() - MARGIN_BOTTOM);
             display.print(pageInfo);
@@ -356,7 +399,10 @@ public:
     // Also it may be a bit slow since it simulates rendering each page, but it works
     // Loop max to add safety to prevent infinite loops in case of bugs
     bool calculateAllPages(int loop_max = 1000) {
-        while (calculateNextPage() && loop_max-- > 0);
+        while (calculateNextPage() && loop_max-- > 0){
+            // feed the watchdog to prevent reset during long calculations
+            vTaskDelay(1);
+        };
         return pageStarts.size() > 1; // returns true if there is more than one page
     }
 

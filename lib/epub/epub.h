@@ -123,7 +123,7 @@ static const char *TAG = "EPUB";
 bool Epub::find_content_opf_file(ZipFile &zip, std::string &content_opf_file)
 {
   // open up the meta data to find where the content.opf file lives
-  char *meta_info = (char *)zip.read_file_to_memory("META-INF/container.xml");
+  char *meta_info = (char *)zip.read_file_to_memory2("META-INF/container.xml");
   if (!meta_info)
   {
     ESP_LOGE(TAG, "Could not find META-INF/container.xml");
@@ -174,7 +174,7 @@ bool Epub::find_content_opf_file(ZipFile &zip, std::string &content_opf_file)
 bool Epub::parse_content_opf(ZipFile &zip, std::string &content_opf_file)
 {
   // read in the content.opf file and parse it
-  char *contents = (char *)zip.read_file_to_memory(content_opf_file.c_str());
+  char *contents = (char *)zip.read_file_to_memory2(content_opf_file.c_str());
   // parse the contents
   tinyxml2::XMLDocument doc;
   auto result = doc.Parse(contents);
@@ -271,7 +271,7 @@ uint8_t *Epub::get_item_contents(const std::string &item_href, size_t *size)
   ZipFile zip(m_path.c_str());
   std::string path = normalise_path(item_href);
   Serial.printf("Getting item contents for %s\n", path.c_str());
-  auto content = zip.read_file_to_memory(path.c_str(), size);
+  auto content = zip.read_file_to_memory2(path.c_str(), size);
   if (!content)
   {
     ESP_LOGE(TAG, "Failed to read item %s", path.c_str());
@@ -287,6 +287,7 @@ int Epub::get_spine_items_count()
 
 std::string &Epub::get_spine_item(int spine_index)
 {
+  ESP_LOGD(TAG, "get_spine_item index:%d", spine_index);
   try
     {
       return m_spine.at(spine_index).second;

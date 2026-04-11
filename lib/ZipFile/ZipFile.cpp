@@ -12,6 +12,7 @@
 
 #define TAG "ZIP"
 
+// read_file_to_memory2 is probably better for larger files since that uses psram
 uint8_t *ZipFile::read_file_to_memory(const char *filename, size_t *size)
 {
   // open up the epub file using miniz
@@ -78,6 +79,7 @@ uint8_t *ZipFile::read_file_to_memory(const char *filename, size_t *size)
 }
 
 // read a file from the zip file allocating the required memory for the data
+// This function uses psram for the file data, which is much larger than the internal heap, and is suitable for large files like images or HTML content
 uint8_t *ZipFile::read_file_to_memory2(const char *filename, size_t *size)
 {  // open up the epub file using miniz
   mz_zip_archive zip_archive;
