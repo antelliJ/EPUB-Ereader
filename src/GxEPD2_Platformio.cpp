@@ -4,6 +4,7 @@
 // fix discrepencies in TextRenderer of calculateNextPage and regular rendering, 
 // since a little off on where starting and ending -- something with cutting off newline to put on next page?
 //
+// fix get_total_pages
 // fix page numbering in text render and its pointer
 // section_page_to_global_page and the others should use a hashmap somewhere
 // add a "go to page" feature that uses the global page number to jump to the correct section and page within that section (for toc)

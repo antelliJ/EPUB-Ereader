@@ -64,8 +64,8 @@ private:
 
     const int LINESPACE = 22;
 
-    int global_total_pages = 0;
-    int global_current_page = 0;
+    int* global_total_pages = 0;
+    int* global_current_page = 0;
 
 
     const GFXfont* getFontForStyle(SPAN_STYLE style) {
@@ -96,8 +96,8 @@ public:
     ~TextRenderer() {}
 
     void set_global_pages(int *total_pages_ptr, int *current_page_ptr) {
-    global_total_pages = *total_pages_ptr;
-    global_current_page = *current_page_ptr;
+    global_total_pages = total_pages_ptr;
+    global_current_page = current_page_ptr;
   }
 
     // Load text data from a file in the EPUB
@@ -168,7 +168,7 @@ public:
 
             char pageInfo[32];
             // snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
-            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", global_current_page + 1, global_total_pages);
+            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", *global_current_page + 1, *global_total_pages);
             int16_t px = (display.width() -strlen(pageInfo)*6)/2;
             display.setCursor(px, display.height() - MARGIN_BOTTOM);
             display.print(pageInfo);
@@ -263,7 +263,7 @@ public:
             // technically pageNum should be calculated, and the total pages is calculated by EpubReader
             char pageInfo[32];
             // snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
-            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", global_current_page + 1, global_total_pages);
+            snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", *global_current_page + 1, *global_total_pages);
             int16_t px = (display.width() -strlen(pageInfo)*6)/2;
             display.setCursor(px, display.height() - MARGIN_BOTTOM);
             display.print(pageInfo);
@@ -319,7 +319,7 @@ private:
             const GFXfont* font = getFontForStyle(element.style);
             display.setFont(font);
 
-            bool wentNewline = false;
+            // bool wentNewline = false;
 
             std::string word;
             for (char c : element.text) {
@@ -332,13 +332,18 @@ private:
                         if (x + w > display.width() - MARGIN_RIGHT) {
                             x = MARGIN_LEFT;
                             y += LINESPACE;
-                            wentNewline = true;
+                            // wentNewline = true;
 
-                            if ((y + h) > display.height() - MARGIN_BOTTOM) {
-                                pageStarts.push_back(i);
-                                return true; // next page starts at this element
-                            }
+                            // recalculate bounds after newline
+                            display.getTextBounds(word.c_str(), x, y, &x1, &y1, &w, &h);
                         }
+
+                        // check if word fits on page
+                        if (y > display.height() - MARGIN_BOTTOM - LINESPACE) {
+                            pageStarts.push_back(i);
+                            return true; // next page starts at this element
+                        }
+                        
                         x += w; // add space width of the word
                         word.clear();
                     } 
@@ -347,7 +352,9 @@ private:
                     word += c;
                 }
             }
-            if (!word.empty() && !wentNewline) {
+
+            // handle last word
+            if (!word.empty()) {
                 int16_t x1, y1;
                 uint16_t w, h;
                 display.getTextBounds(word.c_str(), x, y, &x1, &y1, &w, &h);
@@ -355,22 +362,25 @@ private:
                 if ((x + w) > (display.width() - MARGIN_RIGHT)) {
                     x = MARGIN_LEFT;
                     y += LINESPACE;
-                    wentNewline = true;
+                    
+                    // recalculate bounds after newline
+                    display.getTextBounds(word.c_str(), x, y, &x1, &y1, &w, &h);
                 }
 
-                if ((y + h) > (display.height() - MARGIN_BOTTOM)) {
-                        pageStarts.push_back(i); // next page starts at end of text
-                        return true;
+                if (y > display.height() - MARGIN_BOTTOM - LINESPACE) {
+                    pageStarts.push_back(i); // next page starts at end of text
+                    return true;
                 }
 
                 x += w;
             }
 
-            if (element.isBlockEnd && !wentNewline) {
+            if (element.isBlockEnd) {
                 x = MARGIN_LEFT;
                 y += LINESPACE; // Move to next line after a block
 
-                if ((y + LINESPACE) > (display.height() - MARGIN_BOTTOM)) {
+                // check if still on page
+                if (y > display.height() - MARGIN_BOTTOM - LINESPACE) {
                     pageStarts.push_back(i+1); // next page starts at end of text
                     return true;
                 }

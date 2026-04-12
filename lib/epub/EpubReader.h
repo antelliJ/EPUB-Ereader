@@ -26,6 +26,8 @@ private:
   int total_pages = 0;
   int global_current_page = 0; // this is the current page in the whole book, not just the current section
 
+  std::vector<int> section_page_lengths; // number of pages in each section, used to calculate global page number and for "go to page" feature
+
 public:
   EpubReader(EpubListItem &state, TextRenderer<DISPLAY_TYPE> *renderer) : state(state), renderer(renderer){};
   ~EpubReader() = default;
@@ -96,6 +98,8 @@ void EpubReader::parse_and_layout_current_section()
     /* LOAD FROM HTML IS ALSO CAUSING ISSUES WITH CURRENT SECTION AND CURRENT PAGE*/
     renderer->loadFromHtml(*parser);
     Serial.printf("Debug: loaded html into renderer, now calculating pages: -- current_section: %d, current_page: %d\n", state.current_section, state.current_page);
+    
+    
     renderer->calculateAllPages();
     ESP_LOGD(TAG, "After layout: %d", esp_get_free_heap_size());
     ESP_LOGD(TAG, "Section %d has %d pages, current page: %d", state.current_section, renderer->getTotalPages(), state.current_page);
@@ -110,9 +114,9 @@ void EpubReader::next()
   if (get_current_page_global() >= get_total_pages() - 1) {
     // wrap to the beginning of the first section
     set_state_section(0);
+    state.current_page = 0;
     parser.reset();
     parse_and_layout_current_section();
-    state.current_page = 0;
     return;
   }
   
@@ -165,7 +169,7 @@ void EpubReader::render()
   renderer->set_global_pages(&total_pages, &global_current_page);
   renderer-> drawPage(state.current_page);
 
-  ESP_LOGD(TAG, "rendered page %d of %d", section_page_to_global_page(state.current_section, state.current_page), get_total_pages());
+  ESP_LOGD(TAG, "rendered page %d of %d", get_current_page_global(), get_total_pages());
   ESP_LOGD(TAG, "after render psram: %d", ESP.getFreePsram());
 }
 
@@ -175,6 +179,15 @@ int EpubReader::current_page_to_section_page(int current_page) {
   std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
   std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
   for (int i = 0; i < min((int)state.current_section, epub->get_spine_items_count()); i++) {
+    // check if this section is already calculated and stored in section_page_lengths vector
+    if (i < section_page_lengths.size()) {
+      accumulated_page += section_page_lengths[i];
+      if (accumulated_page > current_page) {
+        return current_page - (accumulated_page - section_page_lengths[i]);
+      }
+      continue;
+    }
+
     // page += state.epub_list[i].pages_in_current_section;
     std::string item = epub->get_spine_item(i);
     std::string base_path = item.substr(0, item.find_last_of('/') + 1);
@@ -190,6 +203,7 @@ int EpubReader::current_page_to_section_page(int current_page) {
       return current_page - accumulated_page;
     }
     accumulated_page += temp_renderer->getTotalPages();
+    section_page_lengths.push_back(temp_renderer->getTotalPages());
     free(html);
   }
   return 0; // default to first page if something goes wrong
@@ -202,6 +216,11 @@ int EpubReader::section_page_to_global_page(int section, int page) {
   std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
   std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
   for (int i = 0; i < section; i++) {
+    // check if this section is already calculated and stored in section_page_lengths vector
+    if (i < section_page_lengths.size()) {
+      global_page += section_page_lengths[i];
+      continue;
+    }
     std::string item = epub->get_spine_item(i);
     std::string base_path = item.substr(0, item.find_last_of('/') + 1);
     char *html = reinterpret_cast<char *>(epub->get_item_contents(item));
@@ -213,6 +232,7 @@ int EpubReader::section_page_to_global_page(int section, int page) {
     temp_renderer->calculateAllPages();
     global_page += temp_renderer->getTotalPages();
     free(html);
+    section_page_lengths.push_back(temp_renderer->getTotalPages());
   }
   global_page += page;
   return global_page;
@@ -230,6 +250,7 @@ void EpubReader::set_state_section(uint16_t current_section) {
   state.current_section = current_section;
 }
 
+// This should probably be fixed
 int EpubReader::get_total_pages() {
   if (total_pages > 0) {
     return total_pages;
@@ -241,6 +262,11 @@ int EpubReader::get_total_pages() {
   int pages = 0;
 
   for (int i = 0; i < epub->get_spine_items_count(); i++) {
+    // check if this section is already calculated and stored in section_page_lengths vector
+    if (i < section_page_lengths.size()) {
+      pages += section_page_lengths[i];
+      continue;
+    }
     std::string item = epub->get_spine_item(i);
     std::string base_path = item.substr(0, item.find_last_of('/') + 1);
     char *html = reinterpret_cast<char *>(epub->get_item_contents(item));
@@ -255,6 +281,7 @@ int EpubReader::get_total_pages() {
     temp_renderer->calculateAllPages();
     pages += temp_renderer->getTotalPages();
     free(html);
+    section_page_lengths.push_back(temp_renderer->getTotalPages());
   }
   total_pages = pages;
   return total_pages;
@@ -264,7 +291,7 @@ int EpubReader::get_current_page() {
   return state.current_page;
 }
 
-// I think this is a bit broken since it causes a failed reader initialization
+// I think this is a bit broken since it causes a failed reader initialization - or not?
 int EpubReader::get_current_page_global() {
   global_current_page = section_page_to_global_page(state.current_section, state.current_page);
   return global_current_page;
