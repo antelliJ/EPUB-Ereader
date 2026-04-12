@@ -179,16 +179,21 @@ void epub_read_test(void *parameter) {
 
   // create test Epub List Item from starwars epub
   // use default values for EpubListItem
-  EpubListItem item = {}; // zero initialize fields
-  strncpy(item.path, "/littlefs/starwars.epub", MAX_PATH_SIZE);
-  item.current_page = 0;
-  item.current_section = 0; // set to 1 to start from the first section (after cover)
-  item.pages_in_current_section = 0;
+  // EpubListItem item = {}; // zero initialize fields
+  memset(&epub_list_state.epub_list[0], 0, sizeof(EpubListItem)); // zero initialize fields
+  strncpy(epub_list_state.epub_list[0].path, "/littlefs/starwars.epub", MAX_PATH_SIZE);
+  epub_list_state.epub_list[0].current_page = 0;
+  epub_list_state.epub_list[0].current_section = 0; // set to 1 to start from the first section (after cover)
+  epub_list_state.epub_list[0].pages_in_current_section = 0;
+
+  epub_list_state.num_epubs = 1;
+  epub_list_state.selected_item = 0;
+  epub_list_state.is_loaded = true;
 
   Serial.printf("Debug: free heap: %d\n", ESP.getFreeHeap());
   Serial.printf("Debug: available PSRAM heap: %d\n", ESP.getFreePsram());
   renderer = new TextRenderer<DISPLAY_TYPE>(display);
-  reader = new EpubReader(item, renderer);
+  reader = new EpubReader(epub_list_state.epub_list[0], renderer);
   reader->load();
 
   Serial.printf("Debug: Epub Loaded\n");

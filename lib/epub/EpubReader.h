@@ -111,14 +111,18 @@ void EpubReader::next()
 {
   state.current_page++;
   
-  if (get_current_page_global() >= get_total_pages() - 1) {
-    // wrap to the beginning of the first section
-    set_state_section(0);
-    state.current_page = 0;
-    parser.reset();
-    parse_and_layout_current_section();
-    return;
-  }
+  // if (get_current_page_global() >= get_total_pages() - 1) {
+  //   // debug message
+  //   ESP_LOGD(TAG, "Reached end of book, wrapping to beginning.");
+  //   // wrap to the beginning of the first section
+  //   set_state_section(0);
+  //   state.current_page = 0;
+  //   parser.reset();
+  //   parse_and_layout_current_section();
+  //   return;
+  // }
+
+  // set_state_section automatically wraps to the first
   
   if (state.current_page >= state.pages_in_current_section)
   {
@@ -166,6 +170,7 @@ void EpubReader::render()
   // parser->render_page(state.current_page, renderer, epub);
   // renderer->drawPage(state.current_page); 
   // Serial.printf("Rendering page %d of section, current page: %d\n", state.current_page, current_page_to_section_page(state.current_page));
+  get_current_page_global(); // properly set global_current_page before rendering so that it can be displayed in page info
   renderer->set_global_pages(&total_pages, &global_current_page);
   renderer-> drawPage(state.current_page);
 
@@ -240,13 +245,13 @@ int EpubReader::section_page_to_global_page(int section, int page) {
 
 
 void EpubReader::set_state_section(uint16_t current_section) {
-  ESP_LOGI(TAG, "go to section:%d", current_section);
   if (current_section >= epub->get_spine_items_count()) {
     current_section = 0; // wrap around to first section if out of range
   }
   if (current_section < 0) {
     current_section = epub->get_spine_items_count() - 1; // wrap around to last section if out of range
   }
+  ESP_LOGI(TAG, "go to section:%d", current_section);
   state.current_section = current_section;
 }
 
