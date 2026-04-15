@@ -416,5 +416,9 @@ public:
         return pageStarts.size() > 1; // returns true if there is more than one page
     }
 
+    //get pagestarts (temp)
+    std::vector<size_t> getPageStarts() { return pageStarts; }
+
+
     DisplayType& getDisplay() { return display; }
 };

@@ -64,7 +64,65 @@ bool matches(const char *tag_name, const char *possible_tags[], int possible_tag
 class HtmlParser {
 private:
 std::vector<TextElement> blocks;
+std::string convertSmartQuotes(const std::string& text) {
+  std::string result;
 
+  for (size_t i = 0; i < text.length(); i++) {
+    unsigned char c = text[i];
+
+    // identify that UTF-8 smart quotes are multi-byte characters
+    if (c == 0xE2 && i + 2 < text.length()) {
+      unsigned char b2 = text[i+1];
+      unsigned char b3 = text[i+2];
+
+      // “ (U+201C) and ” (U+201D) -> E2 80 9C and E2 80 9D
+      if (b2 == 0x80 && (b3 == 0x9C || b3 == 0x9D)) {
+        result += '"';
+        i += 2; // skip the next two bytes
+        continue;
+      }
+
+      // ‘ (U+2018) and ’ (U+2019) -> E2 80 98 and E2 80 99
+      if (b2 == 0x80 && (b3 == 0x98 || b3 == 0x99)) {
+        result += '\'';
+        i += 2; // skip the next two bytes
+        continue;
+      }
+
+      // — (em dash U+2014) -> E2 80 94
+      if (b2 == 0x80 && b3 == 0x94) {
+        result += '-';
+        i += 2; // skip the next two bytes
+        continue;
+      }
+
+      // – (en dash U+2013) -> E2 80 93
+      if (b2 == 0x80 && b3 == 0x93) {
+        result += '-';
+        i += 2; // skip the next two bytes
+        continue;
+      }
+
+      // … (ellipsis U+2026) -> E2 80 A6
+      if (b2 == 0x80 && b3 == 0xA6) {
+        result += "...";
+        i += 2; // skip the next two bytes
+        continue;
+      }
+
+      // • (bullet U+2022) -> E2 80 A2
+      if (b2 == 0x80 && b3 == 0xA2) {
+        result += "*";
+        i += 2; // skip the next two bytes
+        continue;
+      }
+    }
+
+    result += c;
+  }
+
+  return result;
+}
 bool is_whitespace(char c)
 {
   return (c == ' ' || c == '\r' || c == '\n');
@@ -107,7 +165,8 @@ bool is_whitespace(char c)
 
         if (!cleaned.empty()) {
           SPAN_STYLE style = getCurrentStyle(isBold, isItalic);
-          blocks.push_back(TextElement(cleaned, style));
+          std::string converted = convertSmartQuotes(cleaned);
+          blocks.push_back(TextElement(converted, style));
         }
       }
 

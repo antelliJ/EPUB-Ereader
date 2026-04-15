@@ -181,7 +181,7 @@ void epub_read_test(void *parameter) {
   // use default values for EpubListItem
   // EpubListItem item = {}; // zero initialize fields
   memset(&epub_list_state.epub_list[0], 0, sizeof(EpubListItem)); // zero initialize fields
-  strncpy(epub_list_state.epub_list[0].path, "/littlefs/starwars.epub", MAX_PATH_SIZE);
+  strncpy(epub_list_state.epub_list[0].path, "/littlefs/sherlock.epub", MAX_PATH_SIZE);
   epub_list_state.epub_list[0].current_page = 0;
   epub_list_state.epub_list[0].current_section = 0; // set to 1 to start from the first section (after cover)
   epub_list_state.epub_list[0].pages_in_current_section = 0;
@@ -347,6 +347,48 @@ void loop() {
   } else {
     if (btnPrevPressed) {
       btnPrevPressed = false; // reset the button state on release
+    }
+  }
+
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    // skip section
+    if (command.equalsIgnoreCase("skip")) {
+      Serial.println("Serial command: Skip Section");
+      if (renderer) {
+        // reader->next();
+        reader->set_state_section(reader->get_current_section() + 1);
+        reader->set_state_page(0); // reset to first page of new section
+        Serial.printf("Current page: %d\n", reader->get_current_page_global());
+      }
+    } else if (command.equalsIgnoreCase("rewind")) {
+      Serial.println("Serial command: Previous Section");
+      if (renderer) {
+        reader->set_state_section(reader->get_current_section() - 1);
+        reader->set_state_page(0); // reset to first page of new section
+        Serial.printf("Current page: %d\n", reader->get_current_page_global());
+      }
+    } else if (command.equalsIgnoreCase("render")) {
+      Serial.println("Serial command: Render current page");
+      display.init(115200, true, 2, false);
+      if (renderer) {
+        reader->render();
+      }
+    } else if (command.equalsIgnoreCase("next")) {
+      Serial.println("Serial command: Next Page");
+      if (renderer) {
+        reader->next();
+        Serial.printf("Current page: %d\n", reader->get_current_page_global());
+      }
+    } else if (command.equalsIgnoreCase("prev")) {
+      Serial.println("Serial command: Previous Page");
+      if (renderer) {
+        reader->prev();
+        Serial.printf("Current page: %d\n", reader->get_current_page_global());
+      }
+    } else {
+      Serial.println("Unknown command. Use 'skip', 'rewind', or 'render'.");
     }
   }
 
