@@ -373,6 +373,7 @@ void loop() {
       Serial.println("Serial command: Render current page");
       display.init(115200, true, 2, false);
       if (renderer) {
+        reader->reset_parser();
         reader->render();
       }
     } else if (command.equalsIgnoreCase("next")) {
@@ -386,6 +387,16 @@ void loop() {
       if (renderer) {
         reader->prev();
         Serial.printf("Current page: %d\n", reader->get_current_page_global());
+      }
+    } else if (command.equalsIgnoreCase("current")) {
+      Serial.println("Serial command: Print current page info");
+      if (renderer) {
+        Serial.printf("Current section: %d, Current page in section: %d, Current global page: %d\n", reader->get_current_section(), reader->get_current_page(), reader->get_current_page_global());
+      }
+    } else if (command.equalsIgnoreCase("total")) {
+      Serial.println("Serial command: Print total pages");
+      if (renderer) {
+        Serial.printf("Total pages: %d\n", reader->get_total_pages());
       }
     } else {
       Serial.println("Unknown command. Use 'skip', 'rewind', or 'render'.");

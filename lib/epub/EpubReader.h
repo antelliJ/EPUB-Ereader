@@ -41,12 +41,13 @@ public:
   int section_page_to_global_page(int section, int page);
   int get_current_page();
   int get_current_page_global();
-  void go_to_page(int global_page); // not used yet
+  void go_to_page(int global_page); // not used or tested yet
   int get_current_section();
   int set_state_page(uint16_t current_page) {
     state.current_page = current_page;
     return state.current_page;
   }
+  void reset_parser() { parser.reset(); }
 };
 
 bool EpubReader::load()
