@@ -4,12 +4,13 @@
 // fix discrepencies in TextRenderer of calculateNextPage and regular rendering, 
 // since a little off on where starting and ending -- something with cutting off newline to put on next page?
 //
-// fix get_total_pages
+// x fix get_total_pages
 // fix page numbering in text render and its pointer
-// section_page_to_global_page and the others should use a hashmap somewhere
+// x section_page_to_global_page and the others should use a hashmap somewhere
 // add a "go to page" feature that uses the global page number to jump to the correct section and page within that section (for toc)
 // make menu stuff
 // add table of contents support in epub reader
+// add loading img when loading book / section
 
 // GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
@@ -398,8 +399,41 @@ void loop() {
       if (renderer) {
         Serial.printf("Total pages: %d\n", reader->get_total_pages());
       }
+    } else if (command.startsWith("goto ")) {
+      int pageNum = command.substring(5).toInt();
+      Serial.printf("Serial command: Go to global page %d\n", pageNum);
+      if (renderer) {
+        reader->go_to_page(pageNum);
+        Serial.printf("Current page after goto: %d\n", reader->get_current_page_global());
+      }
+    } else if (command.equalsIgnoreCase("pageContent")) {
+      Serial.println("Serial command: Print current page content");
+      // This is just for testing, not an actual feature
+      if (renderer) {
+        Serial.printf("Page content: %s\n", renderer->getPageContent(reader->get_current_page()).c_str());
+      }
+    } else if (command.equalsIgnoreCase("pageContentHex")) {
+      Serial.println("Serial command: Print current page content in hex");
+      // This is just for testing, not an actual feature
+      if (renderer) {
+        String content = renderer->getPageContent(reader->get_current_page());
+        Serial.print("Page content in hex: ");
+        for (size_t i = 0; i < content.length(); i++) {
+          Serial.printf("%02X ", content[i]);
+        }
+        Serial.println();
+      }
     } else {
-      Serial.println("Unknown command. Use 'skip', 'rewind', or 'render'.");
+      Serial.println("Available commands:");
+      Serial.println(" - skip: Skip to the next section");
+      Serial.println(" - rewind: Go back to the previous section");
+      Serial.println(" - render: Re-render the current page");
+      Serial.println(" - next: Go to the next page");
+      Serial.println(" - prev: Go to the previous page");
+      Serial.println(" - current: Print current section and page info");
+      Serial.println(" - total: Print total number of pages in the book");
+      Serial.println(" - goto [pageNum]: Go to a specific global page number (e.g. 'goto 42')");
+      Serial.println(" - pageContent: Print the content of the current page");
     }
   }
 

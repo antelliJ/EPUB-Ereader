@@ -100,6 +100,8 @@ public:
     global_current_page = current_page_ptr;
   }
 
+  
+
     // Load text data from a file in the EPUB
     // bool loadText(ZipFile& zip, const char* filename) {
     //     if (textData) {ZipFile::free_file_memory(textData);}
@@ -273,6 +275,24 @@ public:
 
         display.hibernate();
         currentPage = pageNum;
+    }
+
+    String getPageContent(int pageNum) {
+        if (pageNum < 0 || pageNum >= pageStarts.size()) return "";
+
+        size_t startIndex = pageStarts[pageNum];
+        size_t endIndex = (pageNum + 1 < pageStarts.size()) 
+                            ? pageStarts[pageNum + 1] 
+                            : textElements.size();
+
+        String content;
+        for (size_t i = startIndex; i < endIndex; i++) {
+            content += textElements[i].text.c_str();
+            if (textElements[i].isBlockEnd) {
+                content += "\n";
+            }
+        }
+        return content;
     }
 private:
     bool renderWord(const char* word, int16_t& x, int16_t& y, int lineSpace) {
