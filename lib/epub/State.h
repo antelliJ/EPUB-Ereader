@@ -29,10 +29,10 @@ typedef struct
   EpubListItem epub_list[MAX_EPUB_LIST_SIZE];
 } EpubListState;
 
-// // this is held in the RTC memory
-// typedef struct
-// {
-//   int previous_rendered_page;
-//   int previous_selected_item;
-//   int selected_item;
-// } EpubTocState;
+// this is held in the RTC memory
+typedef struct
+{
+  int previous_rendered_page;
+  int previous_selected_item;
+  int selected_item;
+} EpubTocState;

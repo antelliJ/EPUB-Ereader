@@ -53,11 +53,16 @@
 
 // #include "epub.h" // This is just for testing, not used in main code (EpubReader loads it)
 #include "EpubReader.h"
+#include "EpubList.h"
+#include "EpubToc.h"
 
 #include "State.h"
 
-#include "SD.h"
-#define SD_CS 5
+// #include "SD.h"
+// #define SD_CS 5
+
+#include "Actions.h"
+#include "RemoteTable.h"
 
 #define EPD_MOSI 11
 #define EPD_SCK  12
@@ -84,6 +89,16 @@
   // GxEPD2_3C<GxEPD2_583c_GDEQ0583Z31, 480>display(GxEPD2_583c_GDEQ0583Z31(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)); // This ALSO works, maybe a TAD faster ??
 // GxEPD2_BW<GxEPD2_420_GDEY042T81, 400> display(GxEPD2_420_GDEY042T81(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)); // This is just for testing the black and white display, not used in main code
 
+typedef enum
+{
+  SELECTING_EPUB,
+  SELECTING_TABLE_CONTENTS,
+  READING_EPUB
+} UIState;
+
+RTC_NOINIT_ATTR UIState ui_state = SELECTING_EPUB;
+
+
 DISPLAY_TYPE display(DISPLAY_DRIVER(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 RTC_DATA_ATTR EpubListState epub_list_state;
@@ -103,7 +118,9 @@ bool btnPrevPressed = false;
 const unsigned long HOLD_DURATION = 1000; // 1 second hold duration for page turn rendering
 
 TextRenderer<DISPLAY_TYPE>* renderer = nullptr;
+static EpubList *epub_list = nullptr;
 static EpubReader *reader = nullptr;
+static EpubToc *contents = nullptr;
 
 void drawTextPage(int pageNum);
 void epub_read_test(void *parameter);
@@ -111,16 +128,22 @@ void clearWindow();
 
 void setup()
 {
-  pinMode(NEXT_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(PREV_BUTTON_PIN, INPUT_PULLUP);
+  
   // Initialize SPI with your custom MOSI/SCK
   // hspi.begin(CLK, MISO, MOSI, SS)
   hspi.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
   display.epd2.selectSPI(hspi, SPISettings(4000000, MSBFIRST, SPI_MODE0));
 
+  
+  // pinMode(NEXT_BUTTON_PIN, INPUT_PULLUP);
+  // pinMode(PREV_BUTTON_PIN, INPUT_PULLUP);
+
+  
   Serial.begin(115200);
   esp_log_level_set("TextRenderer", ESP_LOG_INFO); // Set log level to INFO for all tags
   esp_log_level_set("EPUB", ESP_LOG_INFO);
+  
+  setupRemote();
 
   display.setTextWrap(false);
 
@@ -146,6 +169,10 @@ void setup()
   
   display.init(115200,true,50,false);
 
+  Serial.printf("Debug: free heap: %d\n", ESP.getFreeHeap());
+  Serial.printf("Debug: available PSRAM heap: %d\n", ESP.getFreePsram());
+  renderer = new TextRenderer<DISPLAY_TYPE>(display);
+
   // helloWorld();
   // display.hibernate();
 
@@ -155,7 +182,7 @@ void setup()
 
   // printChapterToSerial("/littlefs/starwars.epub", "META-INF/container.xml");
   // The last one is to use core 1
-  xTaskCreatePinnedToCore(epub_read_test, "EPUB Read Test", 16384, NULL, 1, NULL, 1);
+  // xTaskCreatePinnedToCore(epub_read_test, "EPUB Read Test", 16384, NULL, 1, NULL, 1);
   
 }
 
@@ -181,7 +208,7 @@ void epub_read_test(void *parameter) {
   // create test Epub List Item from starwars epub
   // use default values for EpubListItem
   // EpubListItem item = {}; // zero initialize fields
-  memset(&epub_list_state.epub_list[0], 0, sizeof(EpubListItem)); // zero initialize fields
+  memset(&epub_list_state.epub_list[0], 0, sizeof(EpubListItem)); // zero initialize fields 
   strncpy(epub_list_state.epub_list[0].path, "/littlefs/sherlock.epub", MAX_PATH_SIZE);
   epub_list_state.epub_list[0].current_page = 0;
   epub_list_state.epub_list[0].current_section = 0; // set to 1 to start from the first section (after cover)
@@ -274,83 +301,142 @@ int wrap(int start, int end, int wrapNum) {
     return wrapNum;
 }
 
+// helper function before HandleEpubList
+void epub_list_load_task(void *parameter) {
+  EpubList *list = (EpubList *)parameter;
 
-void loop() {
-  if (digitalRead(NEXT_BUTTON_PIN)==LOW){
-    if (!btnNextPressed) {
-      btnNextPressed = true;
-      btnNextPressTime = millis();
-
-      if (renderer) {
-        currentPage = wrap(0, totalPages - 1, currentPage + 1);
-        reader->next();
-        Serial.printf("Next button pressed! Current page (of section): %d\n", reader->get_current_page());
-        // Serial.printf("Next button pressed! Current page (global): %d\n", reader->get_current_page_global());
-      }
-    } else {
-      if(millis() - btnNextPressTime >= HOLD_DURATION) {
-        Serial.println("Next button held for page turn rendering!");
-        btnNextPressed = false; // reset the button state
-        // Reinit if hibernated
-        display.init(115200, true, 2, false);
-
-        if (renderer) {
-          // renderer->drawPage(currentPage);
-          reader->render();
-        }
-
-        btnNextPressed = false;
-
-        // wait for button release
-        while(digitalRead(NEXT_BUTTON_PIN)==LOW) {
-          delay(10); // debounce delay
-        }
-      }
-    }
+  Serial.println("Starting EPUB list load task");
+  if (list->load("/")) {
+    Serial.println("Epub files loaded");
+    list->set_needs_redraw();
+    // list->render();
   } else {
-    if (btnNextPressed) {
-      btnNextPressed = false; // reset the button state on release
-    }
+    Serial.println("Failed to load Epub files");
   }
 
-  if (digitalRead(PREV_BUTTON_PIN)==LOW){
+  vTaskDelete(NULL); // Delete the task when done
+}
+
+void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action);
+
+void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw=true) {
+  if (!epub_list) {
+    ESP_LOGI("main", "Creating epub list");
+    epub_list = new EpubList(renderer, epub_list_state);
+
+    // if (epub_list->load("/")) {
+    //   ESP_LOGI("main", "Epub files loaded");
+    //   epub_list->render();
+    // }
+
+    // Load the EPUB list in a separate task to avoid blocking the main loop
+    xTaskCreatePinnedToCore(epub_list_load_task, 
+      "Epub List Load Task", 
+      16384,              // stack size
+      (void *)epub_list,  // pass the epub_list pointer as parameter
+      1,                  // priority
+      NULL,
+      1);                 // core 14
     
-    if (!btnPrevPressed) {
-      btnPrevPressed = true;
-      btnPrevPressTime = millis();
-
-      if (renderer) {
-        // currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
-        currentPage = wrap(0, totalPages - 1, currentPage - 1); // Wrap around using the helper function
-        reader->prev();
-        Serial.printf("Previous button pressed! Current page (of section): %d\n", reader->get_current_page());
-      }
-    } else {
-      if (millis() - btnPrevPressTime >= HOLD_DURATION) {
-        Serial.printf("Rendering previous page!\n");
-        
-        
-        display.init(115200, true, 2, false);
-
-        if (renderer) {
-          // renderer->drawPage(currentPage);
-          reader->render();
-        }
-
-        btnNextPressed = false;
-
-        // wait for button release
-        while(digitalRead(PREV_BUTTON_PIN)==LOW) {
-          delay(10); // debounce delay
-        }
-      }
-    }
-  } else {
-    if (btnPrevPressed) {
-      btnPrevPressed = false; // reset the button state on release
-    }
+    return;
   }
 
+  switch(ui_action) {
+    case UP:
+      epub_list->prev();
+      epub_list->render();
+      break;
+
+    case DOWN:
+      epub_list->next();
+      epub_list->render();
+      break;
+
+    case SELECT:
+      ui_state = READING_EPUB;
+      renderer->clear_screen();
+
+      delete epub_list;
+      epub_list = nullptr;
+
+      if (!reader)
+      {
+        reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+        reader->load();
+      }
+      handleEpub(renderer, NONE);
+      return;
+
+    case NONE:
+    default:  
+    if (needs_redraw) {
+      epub_list->render();
+    }
+      break;
+  }
+}
+
+void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
+  if (!reader) {
+    reader = new EpubReader(epub_list_state.epub_list[0], renderer);
+    reader->load();
+  }
+
+  switch (ui_action)
+  {
+  case UP:
+    reader->prev();
+    break;
+  
+  case DOWN:
+    reader->next();
+    break;
+
+  case MENU:
+    ui_state = SELECTING_EPUB;
+    renderer->clear_screen();
+
+    delete reader;
+    reader = nullptr;
+
+    if (!epub_list)
+    {
+      epub_list = new EpubList(renderer, epub_list_state);
+    }
+    handleEpubList(renderer, NONE, true);
+    return;
+
+  case NONE:
+  default:
+    break;
+  }
+}
+
+
+void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw=true) {
+  // This function can be called in the main loop to handle user interactions
+  // such as button presses for next/previous page, and it can call renderer->drawPage() accordingly.
+  if (!renderer) return; // safety check
+
+  //check if action is none
+  // if (ui_action == NONE) return; 
+
+  switch (ui_state)
+  {
+  case READING_EPUB:
+    handleEpub(renderer, ui_action);
+    break;
+  case SELECTING_TABLE_CONTENTS:
+    // handleEpubTableContents(renderer, ui_action, needs_redraw);
+    break;
+  case SELECTING_EPUB:
+  default:
+    handleEpubList(renderer, ui_action, false);
+    break;
+  }
+}
+
+void checkSerialCmds(){
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
@@ -436,11 +522,99 @@ void loop() {
       Serial.println(" - pageContent: Print the content of the current page");
     }
   }
+}
 
-  delay(100); // Small delay to avoid busy looping
+
+void loop() {
+  uint32_t Signature = scanSignature();
+  // Serial.printf("Scanned remote signal: 0x%08X\n", Signature);
+  UIAction action = getActionForSignal(Signature);
+  handleUserInteraction(renderer, action);
+  checkSerialCmds();
+  // debounce delay
+  delay(100);
 };
 
+void oldGPIOcmd(){
+  if (digitalRead(NEXT_BUTTON_PIN)==LOW){
+    if (!btnNextPressed) {
+      btnNextPressed = true;
+      btnNextPressTime = millis();
 
+      if (renderer) {
+        currentPage = wrap(0, totalPages - 1, currentPage + 1);
+        reader->next();
+        Serial.printf("Next button pressed! Current page (of section): %d\n", reader->get_current_page());
+        // Serial.printf("Next button pressed! Current page (global): %d\n", reader->get_current_page_global());
+      }
+    } else {
+      if(millis() - btnNextPressTime >= HOLD_DURATION) {
+        Serial.println("Next button held for page turn rendering!");
+        btnNextPressed = false; // reset the button state
+        // Reinit if hibernated
+        display.init(115200, true, 2, false);
+
+        if (renderer) {
+          // renderer->drawPage(currentPage);
+          reader->render();
+        }
+
+        btnNextPressed = false;
+
+        // wait for button release
+        while(digitalRead(NEXT_BUTTON_PIN)==LOW) {
+          delay(10); // debounce delay
+        }
+      }
+    }
+  } else {
+    if (btnNextPressed) {
+      btnNextPressed = false; // reset the button state on release
+    }
+  }
+
+  if (digitalRead(PREV_BUTTON_PIN)==LOW){
+    
+    if (!btnPrevPressed) {
+      btnPrevPressed = true;
+      btnPrevPressTime = millis();
+
+      if (renderer) {
+        // currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
+        currentPage = wrap(0, totalPages - 1, currentPage - 1); // Wrap around using the helper function
+        reader->prev();
+        Serial.printf("Previous button pressed! Current page (of section): %d\n", reader->get_current_page());
+      }
+    } else {
+      if (millis() - btnPrevPressTime >= HOLD_DURATION) {
+        Serial.printf("Rendering previous page!\n");
+        
+        
+        display.init(115200, true, 2, false);
+
+        if (renderer) {
+          // renderer->drawPage(currentPage);
+          reader->render();
+        }
+
+        btnNextPressed = false;
+
+        // wait for button release
+        while(digitalRead(PREV_BUTTON_PIN)==LOW) {
+          delay(10); // debounce delay
+        }
+      }
+    }
+  } else {
+    if (btnPrevPressed) {
+      btnPrevPressed = false; // reset the button state on release
+    }
+  }
+
+  
+
+  delay(100); // Small delay to avoid busy looping
+}
 
 
 void clearWindow() { // UNUSED

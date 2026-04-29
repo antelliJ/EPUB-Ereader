@@ -360,7 +360,19 @@ private:
 
                         // check if word fits on page
                         if (y > display.height() - MARGIN_BOTTOM - LINESPACE) {
-                            pageStarts.push_back(i);
+                            // check if we're stuck on the same element
+                            // without checking large textElements that exceed one page would cause an infinite loop since it would keep trying to start the next page at the same element
+                            // alternative: pageStarts.size() >= 2 && pageStarts[pageStarts.size() - 2] == i
+                            //      This check uses 2 since the first element is always 0, and must have the second
+                            //      I do get different results from the two checks, but I'm not sure which one is correct, I'm pretty sure its the one below tho 
+                            if (!pageStarts.empty() && pageStarts.back() == i) {
+                                // already tried this element, skip to next
+                                ESP_LOGW("TextRenderer", "Element %d is too large for a single page, skipping to %d", i, i+1);
+                                pageStarts.pop_back(); // remove the last page start since it doesn't work
+                                pageStarts.push_back(i+1);
+                            } else {
+                                pageStarts.push_back(i);
+                            }
                             return true; // next page starts at this element
                         }
                         
@@ -388,7 +400,14 @@ private:
                 }
 
                 if (y > display.height() - MARGIN_BOTTOM - LINESPACE) {
-                    pageStarts.push_back(i); // next page starts at end of text
+                    // check if we're stuck on the same element
+                    if (!pageStarts.empty() && pageStarts.back() == i) {
+                        ESP_LOGW("TextRenderer", "Element %d is too large for a single page, skipping to %d", i, i+1);
+                        pageStarts.pop_back(); // remove the last page start since it doesn't work
+                        pageStarts.push_back(i+1);
+                    } else {
+                        pageStarts.push_back(i); // next page starts at end of text
+                    }
                     return true;
                 }
 
@@ -441,4 +460,35 @@ public:
 
 
     DisplayType& getDisplay() { return display; }
+
+    // AI basically made this
+    void show_busy(){
+        // write "Loading..." in a box in the middle of the screen
+        display.setRotation(1);
+        display.setFont(&FreeSansBold9pt7b);
+        display.setTextColor(GxEPD_BLACK);
+        const char* message = "Loading...";
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        display.getTextBounds(message, 0, 0, &tbx, &tby, &tbw, &tbh);
+        int16_t x = (display.width() - tbw) / 2 - tbx;
+        int16_t y = (display.height() - tbh) / 2 - tby;
+        display.setFullWindow();
+        display.firstPage();
+        // use fast method to draw a filled rectangle as background for the message
+        display.fillScreen(GxEPD_WHITE);
+        display.fillRect(x, y, tbw, tbh, GxEPD_BLACK);
+        display.setCursor(x, y);
+        display.print(message);
+        display.nextPage();
+    }
+
+    void clear_screen() {
+        display.setFullWindow();
+        display.firstPage();
+        display.fillScreen(GxEPD_WHITE);
+        display.nextPage();
+    }
+
+    int get_page_height() { return display.height(); }
+    int get_page_width() { return display.width(); }
 };

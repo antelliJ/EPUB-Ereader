@@ -66,6 +66,7 @@ bool EpubReader::load()
       return false;
     }
   }
+  renderer->show_busy();
   total_pages = 0; // reset total pages so it will be recalculated when needed
   return true;
 }
@@ -350,40 +351,60 @@ int EpubReader::get_current_page_global() {
 }
 
 void EpubReader::go_to_page(int global_page) {
+  if (global_page < 0 || global_page >= get_total_pages()) {
+    ESP_LOGW(TAG, "Page %d out of range, total pages: %d", global_page, get_total_pages());
+    return;
+  }
+
   int accumulated_page = 0;
-  std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
-  std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
   for (int i = 0; i < epub->get_spine_items_count(); i++) {
-    // check if this section is already calculated and stored in section_page_lengths vector
-    if (i < section_page_lengths.size()) {
-      accumulated_page += section_page_lengths[i];
-      if (accumulated_page > global_page) {
-        set_state_section(i);
-        state.current_page = global_page - (accumulated_page - section_page_lengths[i]);
-        return;
+    int section_pages = 0;
+    if (section_page_lengths.find(i) != section_page_lengths.end()) {
+      section_pages = section_page_lengths[i];
+    } else {
+      std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
+      std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
+      
+      std::string item = epub->get_spine_item(i);
+      std::string base_path = item.substr(0, item.find_last_of('/') + 1);
+      char *html = reinterpret_cast<char *>(epub->get_item_contents(item));
+      if (html) {
+        temp_parser->parseHtml(html, strlen(html));
+        temp_renderer->loadFromHtml(*temp_parser);
+        temp_renderer->calculateAllPages();
+        section_pages = temp_renderer->getTotalPages();
+        free(html);
       }
-      continue;
+      // section_page_lengths.push_back(section_pages);
+      section_page_lengths[i] = section_pages;
     }
-    std::string item = epub->get_spine_item(i);
-    std::string base_path = item.substr(0, item.find_last_of('/') + 1);
-    char *html = reinterpret_cast<char *>(epub->get_item_contents(item));
-    if (!html) {
-      return;
-    }
-    temp_parser->parseHtml(html, strlen(html));
-    temp_renderer->loadFromHtml(*temp_parser);
-    temp_renderer->calculateAllPages();
-    if ((accumulated_page + temp_renderer->getTotalPages()) >= global_page) {
+
+
+    if (accumulated_page + section_pages > global_page) {
       set_state_section(i);
       state.current_page = global_page - accumulated_page;
-      free(html);
+      parser.reset();
+      parse_and_layout_current_section();
+
+      // check if calc page actually matches
+      if (state.current_page >= state.pages_in_current_section) {
+        ESP_LOGW(TAG, "Page calculation mismatch: wanted page %d but section only has %d pages",
+                 state.current_page, state.pages_in_current_section);
+                 state.current_page = state.pages_in_current_section - 1; // set to last page of section if mismatch
+      }
+
       return;
     }
-    accumulated_page += temp_renderer->getTotalPages();
-    // section_page_lengths.push_back(temp_renderer->getTotalPages());
-    section_page_lengths[i] = temp_renderer->getTotalPages();
-    free(html);
+    accumulated_page += section_pages;
   }
+
+
+  // If we get here, go to last page of last section
+  ESP_LOGW(TAG, "Reached end of loop, going to last section");
+  set_state_section(epub->get_spine_items_count() - 1);
+  parser.reset();
+  parse_and_layout_current_section();
+  state.current_page = state.pages_in_current_section - 1;
 }
 
 int EpubReader::get_current_section() {
