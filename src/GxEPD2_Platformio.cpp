@@ -317,6 +317,13 @@ void epub_list_load_task(void *parameter) {
   vTaskDelete(NULL); // Delete the task when done
 }
 
+void epub_reader_task(void *parameter) {
+  EpubReader *reader = (EpubReader *)parameter;
+  reader->load();
+  reader->render();
+  vTaskDelete(NULL);
+}
+
 void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action);
 
 void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw=true) {
@@ -336,7 +343,7 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
       (void *)epub_list,  // pass the epub_list pointer as parameter
       1,                  // priority
       NULL,
-      1);                 // core 14
+      1);                 // core 1
     
     return;
   }
@@ -362,7 +369,14 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
       if (!reader)
       {
         reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
-        reader->load();
+        // reader->load();
+        xTaskCreatePinnedToCore(epub_reader_task, 
+          "Epub Reader Task", 
+          16384,              // stack size
+          (void *)reader,  // pass the epub_list pointer as parameter
+          1,                  // priority
+          NULL,
+          1);                 // core 1
       }
       handleEpub(renderer, NONE);
       return;
@@ -379,17 +393,26 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
 void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
   if (!reader) {
     reader = new EpubReader(epub_list_state.epub_list[0], renderer);
-    reader->load();
+    xTaskCreatePinnedToCore(epub_reader_task, 
+          "Epub Reader Task", 
+          16384,              // stack size
+          (void *)reader,  // pass the epub_list pointer as parameter
+          1,                  // priority
+          NULL,
+          1);                 // core 1
+    // reader->load();
   }
 
   switch (ui_action)
   {
   case UP:
     reader->prev();
+    reader->render();
     break;
   
   case DOWN:
     reader->next();
+    reader->render();
     break;
 
   case MENU:
@@ -402,6 +425,13 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
     if (!epub_list)
     {
       epub_list = new EpubList(renderer, epub_list_state);
+      xTaskCreatePinnedToCore(epub_list_load_task, 
+      "Epub List Load Task", 
+      16384,              // stack size
+      (void *)epub_list,  // pass the epub_list pointer as parameter
+      1,                  // priority
+      NULL,
+      1);                 // core 1
     }
     handleEpubList(renderer, NONE, true);
     return;
@@ -428,6 +458,9 @@ void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_act
     break;
   case SELECTING_TABLE_CONTENTS:
     // handleEpubTableContents(renderer, ui_action, needs_redraw);
+
+    // temporarily just go back to epub list on any interaction in contents for testing
+    ui_state = SELECTING_EPUB;
     break;
   case SELECTING_EPUB:
   default:

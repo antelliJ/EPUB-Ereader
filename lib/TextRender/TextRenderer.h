@@ -476,7 +476,7 @@ public:
         display.firstPage();
         // use fast method to draw a filled rectangle as background for the message
         display.fillScreen(GxEPD_WHITE);
-        display.fillRect(x, y, tbw, tbh, GxEPD_BLACK);
+        // display.fillRect(x, y, tbw, tbh, GxEPD_BLACK);
         display.setCursor(x, y);
         display.print(message);
         display.nextPage();

@@ -57,7 +57,7 @@ bool EpubReader::load()
   // do we need to load the epub?
   if (!epub || epub->get_path() != state.path)
   {
-    // renderer->show_busy();
+    renderer->show_busy();
     parser.reset();
     epub = std::unique_ptr<Epub>(new Epub(state.path));
     if (epub->load())
