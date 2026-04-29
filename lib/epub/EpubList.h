@@ -102,68 +102,54 @@ public:
     renderer->getDisplay().setRotation(1);
     renderer->getDisplay().setFullWindow();
     renderer->getDisplay().firstPage();
-
-    do {
-
     
-
     int current_page = state.selected_item / EPUBS_PER_PAGE;
     int cell_height = renderer->get_page_height() / EPUBS_PER_PAGE;
     int start_index = current_page * EPUBS_PER_PAGE;
+
+    do {
 
     int ypos = 0;
 
     if (current_page != state.previous_rendered_page || m_needs_redraw)
     {
       m_needs_redraw = false;
-      renderer->show_busy();
+      // renderer->show_busy();
       // renderer->clear_screen();
       renderer->getDisplay().fillScreen(GxEPD_WHITE);
       state.previous_selected_item = -1;
       // trigger a redraw of the items
       state.previous_rendered_page = -1;
     }
+
+    ESP_LOGI(TAG, "start_index: %d num_epubs: %d", start_index, state.num_epubs);
     for (int i = start_index; i < start_index + EPUBS_PER_PAGE && i < state.num_epubs; i++) {
-      if (current_page != state.previous_rendered_page) {
-        Epub *epub = new Epub(state.epub_list[i].path);
-        
-        if (epub->load())
-        {
-          // draw the title
-          int text_xpos = PADDING;
-          int text_ypos = ypos + PADDING / 2;
-          int text_width = renderer->get_page_width() - (text_xpos + PADDING);
-          int text_height = cell_height - PADDING * 2;
 
+      // draw the title
+      int text_xpos = PADDING;
+      int text_ypos = ypos + PADDING + 10;
 
-          renderer->getDisplay().setCursor(text_xpos, text_ypos);
-          renderer->getDisplay().setTextColor(GxEPD_BLACK);
-          renderer->getDisplay().setFont(&TomThumb);
-          renderer->getDisplay().print(epub->get_title().c_str());
-        } else {
-          ESP_LOGE(TAG, "Failed to load epub %s", state.epub_list[i].path);
-        }
+      renderer->getDisplay().setCursor(text_xpos, text_ypos);
+      renderer->getDisplay().setTextColor(GxEPD_BLACK);
+      renderer->getDisplay().setFont(&TomThumb);
+      renderer->getDisplay().print(state.epub_list[i].title);
 
-        delete epub;
-        state.previous_rendered_page = current_page;
+      // draw selection box if selected
+      if (state.selected_item == i)
+      {
+        renderer->getDisplay().drawRect(0, ypos, renderer->getDisplay().width(), cell_height, GxEPD_BLACK);
       }
-      
-      // TEMP removing code to draw the box
-      // // clear the selection box around the previous selected item - same page (overwrite with white)
-      // if (state.previous_selected_item == i){
-      //   renderer->getDisplay().drawRect(0, (i % EPUBS_PER_PAGE) * cell_height, renderer->get_page_width(), cell_height, GxEPD_WHITE);
-      // }
-      // // draw the selection box around the current selection
-      // if (state.selected_item == i)
-      // {        renderer->getDisplay().drawRect(0, (i % EPUBS_PER_PAGE) * cell_height, renderer->get_page_width(), cell_height, GxEPD_BLACK);
-      // }
 
+
+    // state.previous_rendered_page = current_page;
+      
       ypos += cell_height;
     }
 
-    state.previous_selected_item = state.selected_item;
-    state.previous_rendered_page = current_page;
   } while (renderer->getDisplay().nextPage());
   renderer->getDisplay().hibernate();
+  
+  state.previous_selected_item = state.selected_item;
+  state.previous_rendered_page = current_page;
   };
 };

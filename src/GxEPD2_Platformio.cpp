@@ -309,7 +309,7 @@ void epub_list_load_task(void *parameter) {
   if (list->load("/")) {
     Serial.println("Epub files loaded");
     list->set_needs_redraw();
-    // list->render();
+    list->render();
   } else {
     Serial.println("Failed to load Epub files");
   }
@@ -460,8 +460,15 @@ void checkSerialCmds(){
       Serial.println("Serial command: Render current page");
       display.init(115200, true, 2, false);
       if (renderer) {
-        reader->reset_parser();
-        reader->render();
+        if (ui_state == READING_EPUB) {
+          reader->reset_parser();
+          reader->render();
+        } else if (ui_state == SELECTING_EPUB) {
+          epub_list->set_needs_redraw();
+          epub_list->render();
+        } else if (ui_state == SELECTING_TABLE_CONTENTS) {
+          // contents->render();
+        }
       }
     } else if (command.equalsIgnoreCase("next")) {
       Serial.println("Serial command: Next Page");
