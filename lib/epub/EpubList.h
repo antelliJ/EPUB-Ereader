@@ -131,8 +131,15 @@ public:
 
       renderer->getDisplay().setCursor(text_xpos, text_ypos);
       renderer->getDisplay().setTextColor(GxEPD_BLACK);
-      renderer->getDisplay().setFont(&TomThumb);
+      renderer->getDisplay().setFont(&Font5x7Fixed);
       renderer->getDisplay().print(state.epub_list[i].title);
+
+      // draw file path below title, indented
+
+      renderer->getDisplay().setCursor(text_xpos + 10, text_ypos + 12);
+      renderer->getDisplay().setFont(&TomThumb);
+      renderer->getDisplay().print(state.epub_list[i].path);
+
 
       // draw selection box if selected
       if (state.selected_item == i)

@@ -9,6 +9,9 @@
 #include <Fonts/FreeSansBold9pt7b.h>
 #include <Fonts/FreeSansOblique9pt7b.h>
 #include <Fonts/TomThumb.h>
+#include <Fonts/Font5x7Fixed.h>
+
+#include "mark.h"
 
 #include "Arduino.h"
 
@@ -79,7 +82,7 @@ private:
             switch(style) {
                 case BOLD_SPAN: return &FreeSansBold9pt7b;
                 case ITALIC_SPAN: return &FreeSansOblique9pt7b;
-                default: return &TomThumb;
+                default: return &Font5x7Fixed; // FreeSans9pt7b
             }
         #endif
     }
@@ -140,7 +143,7 @@ public:
         return true;
     }
 
-    void drawPage(int pageNum) {
+    void drawPage(int pageNum, bool isBookmarked=false) {
         Serial.printf("TextRenderer: page start size: %d, pageNum: %d, textElements size: %d\n", pageStarts.size(), pageNum, textElements.size());
         if (pageNum < 0) return;
 
@@ -162,6 +165,8 @@ public:
         display.setTextColor(GxEPD_BLACK);
         display.setFullWindow();
         display.firstPage();
+
+        
 
         if (textElements.empty()) {
             display.fillScreen(GxEPD_WHITE);
@@ -267,6 +272,12 @@ public:
             // snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", pageNum + 1, pageStarts.size());
             snprintf(pageInfo, sizeof(pageInfo), "Page %d/%d", *global_current_page + 1, *global_total_pages);
             int16_t px = (display.width() -strlen(pageInfo)*6)/2;
+            
+            display.setFont(getFontForStyle(NORMAL));
+            // check if page is bookmarked and draw bookmark icon if it is
+            if (isBookmarked) {
+                drawBookmarkIcon();
+            }
             display.setCursor(px, display.height() - MARGIN_BOTTOM);
             display.print(pageInfo);
 
@@ -491,4 +502,17 @@ public:
 
     int get_page_height() { return display.height(); }
     int get_page_width() { return display.width(); }
+
+    void drawBookmarkIcon() {
+        // Draw a simple bookmark icon in the top right corner to indicate a bookmark
+        // int iconSize = 8;
+        int x = get_page_width() - MARGIN_RIGHT - mark::xres;
+        int y = MARGIN_TOP/3; // slightly below the top margin
+
+        // Simple bookmark shape using mark.h
+        // display.fillRect(x, y, iconSize, iconSize, GxEPD_BLACK); // bottom square
+        // display.fillTriangle(x, y+iconSize, x, y+(iconSize*2), x + iconSize/2, y + iconSize, GxEPD_BLACK); // left triangle
+        // display.fillTriangle(x+iconSize, y + iconSize, x + iconSize, y + (iconSize*2), x + iconSize/2, y + iconSize, GxEPD_BLACK); // right triangle
+        display.drawBitmap(x, y, mark::pixels, mark::xres, mark::yres, GxEPD_BLACK);
+    }
 };

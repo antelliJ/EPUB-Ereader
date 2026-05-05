@@ -5,6 +5,7 @@
 #include "epub.h"
 #include "TextRenderer.h"
 #include "HtmlParser.h"
+#include "bookmark.h"
 
 #include "State.h"
 
@@ -29,6 +30,8 @@ private:
   // number of pages in each section, used to calculate global page number and for "go to page" feature
   std::map<int, int> section_page_lengths; // key = section index, value = page count
 
+  std::vector<uint16_t> bookmarks; // list of bookmarks for the current book
+
 public:
   EpubReader(EpubListItem &state, TextRenderer<DISPLAY_TYPE> *renderer) : state(state), renderer(renderer){};
   ~EpubReader() = default;
@@ -49,6 +52,8 @@ public:
     return state.current_page;
   }
   void reset_parser() { parser.reset(); }
+  void toggle_bookmark(BookmarkManager *manager);
+  void retrieve_bookmarks(BookmarkManager *manager);
 };
 
 bool EpubReader::load()
@@ -179,8 +184,14 @@ void EpubReader::render()
   // renderer->drawPage(state.current_page); 
   // Serial.printf("Rendering page %d of section, current page: %d\n", state.current_page, current_page_to_section_page(state.current_page));
   get_current_page_global(); // properly set global_current_page before rendering so that it can be displayed in page info
+  
+  bool is_bookmark = false;
+  // check if global_current_page is in bookmarks, if it is draw heart
+  if (std::find(bookmarks.begin(), bookmarks.end(), global_current_page) != bookmarks.end()) {
+    is_bookmark = true;
+  }
   renderer->set_global_pages(&total_pages, &global_current_page);
-  renderer-> drawPage(state.current_page);
+  renderer-> drawPage(state.current_page, is_bookmark);
 
   ESP_LOGD(TAG, "rendered page %d of %d", get_current_page_global(), get_total_pages());
   ESP_LOGD(TAG, "after render psram: %d", ESP.getFreePsram());
@@ -409,4 +420,37 @@ void EpubReader::go_to_page(int global_page) {
 
 int EpubReader::get_current_section() {
   return state.current_section;
+}
+
+void EpubReader::toggle_bookmark(BookmarkManager *manager) {
+  // LittleFS.open("/bookmarks.txt", "a+");
+  // check if bookmark already exists for current section and page
+  // if it does, remove it
+  // if it doesn't, add it
+
+  if (!manager) {
+    manager = new BookmarkManager();
+    manager->init();
+  }
+
+  BookmarkData data;
+  manager->loadBookmark(state.path, data);
+  uint16_t global_page = get_current_page_global();
+  bool is_added = manager->toggleBookmark(data, global_page);
+  manager->saveBookmark(state.path, data);
+  Serial.printf("Toggled bookmark for page %d, now has %d bookmarks\n", global_page, data.bookmarks.size());
+
+  renderer->drawPage(state.current_page, is_added); // redraw page to reflect change
+}
+
+void EpubReader::retrieve_bookmarks(BookmarkManager *manager) {
+  if (!manager) {
+    manager = new BookmarkManager();
+    manager->init();
+  }
+
+  BookmarkData data;
+  manager->loadBookmark(state.path, data);
+  bookmarks = data.bookmarks;
+
 }

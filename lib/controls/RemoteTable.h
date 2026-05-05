@@ -19,13 +19,19 @@ struct Button {
 
 Button buttons[] = {
   {0xFFFFFFFF, NONE},
-  {0xDDDDDDDD, UP},
-  {0xEEEEEEEE, DOWN},
-  {0xFFFFEEEE, SELECT},
-  {0xFF77FF77, MENU},
-  {0xF7F7F7F7, OPTIONS},
-  {0xFFFFDDDD, REWIND},
-  {0xFFFFBBBB, FAST_FORWARD}
+  {0xDDDDDDDD, UP}, // left arrow
+  {0xEEEEEEEE, DOWN}, // right arrow
+  {0xFFFFEEEE, SELECT}, // ok button
+  {0xFF77FF77, MENU}, // disk menu 
+  {0xF7F7F7F7, OPTIONS}, // options button => opens toc
+  {0xFFFFDDDD, REWIND}, // <<
+  {0xFFFFBBBB, FAST_FORWARD}, // >>
+  {0x77777777, UP},// up arrow
+  {0xBBBBBBBB, DOWN},// down arrow
+      // {0xFFDDFFDD},// setup
+  {0xFEFEFEFE, BOOKMARK},// subtitle (red wire gets loose)
+      // {0xFFEEFFEE},// audio
+      // {0xFBFBFBFB}// stop
 };
 
 void setupRemote() {

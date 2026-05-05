@@ -268,6 +268,64 @@ bool Epub::parse_content_opf(ZipFile &zip, std::string &content_opf_file)
   return true;
 }
 
+
+bool Epub::parse_toc_ncx_file(ZipFile &zip){
+  // ncx file is specifified in content.opf
+  if (m_toc_ncx_item.empty()){
+    ESP_LOGW(TAG, "No ncx file specified in content.opf");
+    return false;
+  }
+
+  char *ncx_data = (char *)zip.read_file_to_memory2(m_toc_ncx_item.c_str());
+  if (!ncx_data){
+    ESP_LOGE(TAG, "Could not read ncx file %s", m_toc_ncx_item.c_str());
+    return false;
+  }
+  // parse the ncx file
+  tinyxml2::XMLDocument ncx_doc;
+  auto result = ncx_doc.Parse(ncx_data);
+  free(ncx_data);
+  if (result != tinyxml2::XML_SUCCESS) {
+    ESP_LOGE(TAG, "Error parsing ncx file - %s", ncx_doc.ErrorIDToName(result));
+    return false;
+  }
+  auto ncx = ncx_doc.FirstChildElement("ncx");
+  if (!ncx){
+    ESP_LOGE(TAG, "Could not find ncx element in ncx file");
+    return false;
+  }
+
+  auto navMap = ncx->FirstChildElement("navMap");
+  if (!navMap){
+    ESP_LOGE(TAG, "Could not find navMap element in ncx file");
+    return false;
+  }
+
+  // read the navPoints
+  auto navPoint = navMap->FirstChildElement("navPoint");
+  // fille the toc_index map
+  while (navPoint) {
+    // there is id and playOrder attributes on the navPoint element, but we don't need them right now
+    auto navLabel = navPoint->FirstChildElement("navLabel")->FirstChildElement("text")->FirstChild();
+    std::string title = navLabel ? navLabel->Value() : "Untitled";
+    auto content = navPoint->FirstChildElement("content");
+    std::string href = content ? content->Attribute("src") : "";
+    // split the href on the # to get href and anchor separately
+    size_t anchor_pos = href.find('#');
+    // if there is no # in the href, then there is no anchor
+    std::string anchor = "";
+
+    if (anchor_pos != std::string::npos){
+      anchor = href.substr(anchor_pos + 1);
+      href = href.substr(0, anchor_pos);
+    }
+    m_toc.push_back(EpubTocEntry(title, href, anchor, 0));
+    // check for child navPoints and add them to the toc with an incremented level
+    navPoint = navPoint->NextSiblingElement("navPoint");
+  }
+  return true;
+}
+
 uint8_t *Epub::get_item_contents(const std::string &item_href, size_t *size)
 {
   ZipFile zip(m_path.c_str());
@@ -326,14 +384,36 @@ bool Epub::load()
   {
     return false;
   }
-//   if (!parse_toc_ncx_file(zip))
-//   {
-//     return false;
-//   }
+  if (!parse_toc_ncx_file(zip))
+  {
+    return false;
+  }
   return true;
 }
 
 const std::string &Epub::get_title()
 {
   return m_title;
+}
+
+EpubTocEntry &Epub::get_toc_item(int toc_index){
+  return m_toc.at(toc_index);
+}
+
+int Epub::get_toc_items_count(){
+  return m_toc.size();
+}
+
+// work out the section index for a toc index
+int Epub::get_spine_index_for_toc_index(int toc_index){
+  // toc entry should have an href that matches the spine item href
+  // can find spine index by matching the href in the spine to the href in the toc entry
+  for (int i = 0; i < m_spine.size(); i++){
+    if (m_spine[i].second == m_toc[toc_index].href){
+      return i;
+    }
+  }
+
+  // default to first section if not found
+  return 0;
 }

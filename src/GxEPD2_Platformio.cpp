@@ -1,16 +1,16 @@
 #include <Arduino.h>
 #include "LittleFS.h"
 // TODO: 
-// fix discrepencies in TextRenderer of calculateNextPage and regular rendering, 
-// since a little off on where starting and ending -- something with cutting off newline to put on next page?
+// x fix discrepencies in TextRenderer of calculateNextPage and regular rendering, 
+// x since a little off on where starting and ending -- something with cutting off newline to put on next page?
 //
 // x fix get_total_pages
-// fix page numbering in text render and its pointer
+// x fix page numbering in text render and its pointer
 // x section_page_to_global_page and the others should use a hashmap somewhere
-// add a "go to page" feature that uses the global page number to jump to the correct section and page within that section (for toc)
+// x add a "go to page" feature that uses the global page number to jump to the correct section and page within that section (for toc)
 // make menu stuff
 // add table of contents support in epub reader
-// add loading img when loading book / section
+// x (just text) add loading img when loading book / section
 
 // GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
@@ -58,6 +58,8 @@
 
 #include "State.h"
 
+#include "bookmark.h"
+
 // #include "SD.h"
 // #define SD_CS 5
 
@@ -103,6 +105,9 @@ DISPLAY_TYPE display(DISPLAY_DRIVER(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 RTC_DATA_ATTR EpubListState epub_list_state;
 
+// the state data for the epub index list
+RTC_DATA_ATTR EpubTocState epub_index_state = {0, 0, 0}; 
+
 SPIClass hspi(HSPI);
 
 // Pagination variables
@@ -121,6 +126,7 @@ TextRenderer<DISPLAY_TYPE>* renderer = nullptr;
 static EpubList *epub_list = nullptr;
 static EpubReader *reader = nullptr;
 static EpubToc *contents = nullptr;
+static BookmarkManager *bookmark_manager = nullptr;
 
 void drawTextPage(int pageNum);
 void epub_read_test(void *parameter);
@@ -320,11 +326,26 @@ void epub_list_load_task(void *parameter) {
 void epub_reader_task(void *parameter) {
   EpubReader *reader = (EpubReader *)parameter;
   reader->load();
+  reader->retrieve_bookmarks(bookmark_manager);
+  // check if last page saved
   reader->render();
   vTaskDelete(NULL);
 }
 
+void epub_contents_load_task(void *parameter) {
+  EpubToc *contents = (EpubToc *)parameter;
+  if (contents->load()) {
+    Serial.println("Contents loaded successfully");
+    contents->set_needs_redraw();
+    contents->render();
+  } else {
+    Serial.println("Failed to load contents");
+  }
+  vTaskDelete(NULL);
+}
+
 void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action);
+void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw=true);
 
 void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw=true) {
   if (!epub_list) {
@@ -415,6 +436,27 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
     reader->render();
     break;
 
+  case REWIND:
+    reader->set_state_section(reader->get_current_section() - 1);
+    reader->set_state_page(0); // reset to first page of new section
+    reader->render();
+    break;
+  
+  case FAST_FORWARD:
+    reader->set_state_section(reader->get_current_section() + 1);
+    reader->set_state_page(0); // reset to first page of new section
+    reader->render();
+    break;
+
+  case BOOKMARK:
+    // TODO: implement bookmark
+    reader->toggle_bookmark(bookmark_manager);
+    break;
+
+  case SAVE:
+    // TODO: implement save
+    break;
+
   case MENU:
     ui_state = SELECTING_EPUB;
     renderer->clear_screen();
@@ -436,12 +478,84 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
     handleEpubList(renderer, NONE, true);
     return;
 
+  case OPTIONS:
+    ui_state = SELECTING_TABLE_CONTENTS;
+    renderer->clear_screen();
+
+    delete reader;
+    reader = nullptr;
+
+    if (!contents) {
+      contents = new EpubToc(epub_list_state.epub_list[epub_list_state.selected_item],epub_index_state, renderer);
+      xTaskCreatePinnedToCore(epub_contents_load_task, 
+        "Epub Contents Load Task", 
+        65536,  // 64KB stack - XML parsing needs space
+        (void *)contents,  // pass the contents pointer as parameter
+        1,                  // priority
+        NULL,
+        1);                 // core 1
+    }
+    handleEpubTableContents(renderer, NONE);
+    return;
+
   case NONE:
   default:
     break;
   }
 }
 
+void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw) {
+  if (!contents) {
+    ESP_LOGI("main", "Creating contents");
+    contents = new EpubToc(epub_list_state.epub_list[epub_list_state.selected_item],epub_index_state, renderer);
+    // contents->set_needs_redraw();
+    // contents->load();
+    xTaskCreatePinnedToCore(epub_contents_load_task, 
+        "Epub Contents Load Task", 
+        65536,  // 64KB stack - XML parsing needs space
+        (void *)contents,  // pass the contents pointer as parameter
+        1,                  // priority
+        NULL,
+        1);                 // core 1
+  }
+  switch (ui_action) {
+    case UP:
+      contents->prev();
+      contents->render();
+      break;
+
+    case DOWN:
+      contents->next();
+      contents->render();
+      break;
+
+    case SELECT:
+      ESP_LOGI("main", "Selected TOC item");
+      ui_state = READING_EPUB;
+      renderer->clear_screen();
+
+      reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+      reader->set_state_section(contents->get_selected_toc_spine());
+      
+      xTaskCreatePinnedToCore(epub_reader_task, 
+          "Epub Reader Task", 
+          16384,              // stack size
+          (void *)reader,  // pass the epub_list pointer as parameter
+          1,                  // priority
+          NULL,
+          1);                 // core 1
+      delete contents;
+      handleEpub(renderer, NONE);
+      return;
+    case NONE:
+    default:
+    if (needs_redraw) {
+      contents->render();
+    }
+      break;
+
+  }
+}
 
 void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bool needs_redraw=true) {
   // This function can be called in the main loop to handle user interactions
@@ -457,10 +571,7 @@ void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_act
     handleEpub(renderer, ui_action);
     break;
   case SELECTING_TABLE_CONTENTS:
-    // handleEpubTableContents(renderer, ui_action, needs_redraw);
-
-    // temporarily just go back to epub list on any interaction in contents for testing
-    ui_state = SELECTING_EPUB;
+    handleEpubTableContents(renderer, ui_action, needs_redraw);
     break;
   case SELECTING_EPUB:
   default:
