@@ -47,6 +47,7 @@ public:
   int get_current_page_global();
   void go_to_page(int global_page); // not used or tested yet
   int get_current_section();
+
   int set_state_page(uint16_t current_page) {
     state.current_page = current_page;
     return state.current_page;
@@ -271,6 +272,12 @@ int EpubReader::section_page_to_global_page(int section, int page) {
 
 
 void EpubReader::set_state_section(uint16_t current_section) {
+  if (!epub) {
+    // just trust that the user knows what they're doing
+    state.current_section = current_section;
+    return;
+  }
+
   if (current_section >= epub->get_spine_items_count()) {
     current_section = 0; // wrap around to first section if out of range
   }

@@ -534,12 +534,17 @@ void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_a
       ui_state = READING_EPUB;
       renderer->clear_screen();
 
+      // added scope since crossing initialization thingy
+      {uint16_t selected_section = contents->get_selected_toc_spine();
+      Serial.printf("Selected section: %d\n", selected_section);
+
       delete contents;
       contents = nullptr;
 
       if (!reader){
         reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
-        reader->set_state_section(contents->get_selected_toc_spine());
+        reader->set_state_section(selected_section);
+        reader->set_state_page(0); // reset to first page of new section
         
         xTaskCreatePinnedToCore(epub_reader_task, 
             "Epub Reader Task", 
@@ -548,7 +553,7 @@ void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_a
             1,                  // priority
             NULL,
             1);                 // core 1
-      }
+      }}
       handleEpub(renderer, NONE);
       return;
     case NONE:

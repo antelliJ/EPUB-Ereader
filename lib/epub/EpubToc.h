@@ -141,6 +141,7 @@ uint16_t EpubToc::get_selected_toc_spine()
   return epub->get_spine_index_for_toc_index(state.selected_item);
 }
 
+// This is never used - I should remove it
 TocTarget EpubToc::get_selected_toc_target()
 {
   TocTarget target;

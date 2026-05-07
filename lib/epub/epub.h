@@ -311,10 +311,11 @@ bool Epub::parse_toc_ncx_file(ZipFile &zip){
   while (navPoint) {
     // there is id and playOrder attributes on the navPoint element, but we don't need them right now
     auto navLabel = navPoint->FirstChildElement("navLabel")->FirstChildElement("text")->FirstChild();
-    Serial.printf("Parsing TOC entry: %s\n", navLabel ? navLabel->Value() : "Untitled");
+    // Serial.printf("Parsing TOC entry: %s\n", navLabel ? navLabel->Value() : "Untitled");
     std::string title = navLabel ? navLabel->Value() : "Untitled";
     auto content = navPoint->FirstChildElement("content");
-    std::string href = content ? content->Attribute("src") : "";
+    // std::string href = content ? content->Attribute("src") : "";
+    std::string href = m_base_path + content->Attribute("src");
     // split the href on the # to get href and anchor separately
     size_t anchor_pos = href.find('#');
     // if there is no # in the href, then there is no anchor
