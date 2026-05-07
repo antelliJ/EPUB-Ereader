@@ -495,7 +495,7 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
         NULL,
         1);                 // core 1
     }
-    handleEpubTableContents(renderer, NONE);
+    handleEpubTableContents(renderer, NONE, true);
     return;
 
   case NONE:
@@ -534,17 +534,21 @@ void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_a
       ui_state = READING_EPUB;
       renderer->clear_screen();
 
-      reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
-      reader->set_state_section(contents->get_selected_toc_spine());
-      
-      xTaskCreatePinnedToCore(epub_reader_task, 
-          "Epub Reader Task", 
-          16384,              // stack size
-          (void *)reader,  // pass the epub_list pointer as parameter
-          1,                  // priority
-          NULL,
-          1);                 // core 1
       delete contents;
+      contents = nullptr;
+
+      if (!reader){
+        reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+        reader->set_state_section(contents->get_selected_toc_spine());
+        
+        xTaskCreatePinnedToCore(epub_reader_task, 
+            "Epub Reader Task", 
+            16384,              // stack size
+            (void *)reader,  // pass the epub_list pointer as parameter
+            1,                  // priority
+            NULL,
+            1);                 // core 1
+      }
       handleEpub(renderer, NONE);
       return;
     case NONE:
@@ -571,7 +575,7 @@ void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_act
     handleEpub(renderer, ui_action);
     break;
   case SELECTING_TABLE_CONTENTS:
-    handleEpubTableContents(renderer, ui_action, needs_redraw);
+    handleEpubTableContents(renderer, ui_action, false);
     break;
   case SELECTING_EPUB:
   default:

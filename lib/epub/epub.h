@@ -178,15 +178,17 @@ bool Epub::parse_content_opf(ZipFile &zip, std::string &content_opf_file)
   // read in the content.opf file and parse it
   char *contents = (char *)zip.read_file_to_memory2(content_opf_file.c_str());
   // parse the contents
-  tinyxml2::XMLDocument doc;
-  auto result = doc.Parse(contents);
+  // tinyxml2::XMLDocument doc;
+  // auto result = doc.Parse(contents);
+  auto doc = std::unique_ptr<tinyxml2::XMLDocument>(new tinyxml2::XMLDocument());
+  auto result = doc->Parse(contents);
   free(contents);
   if (result != tinyxml2::XML_SUCCESS)
   {
-    ESP_LOGE(TAG, "Error parsing content.opf - %s", doc.ErrorIDToName(result));
+    ESP_LOGE(TAG, "Error parsing content.opf - %s", doc->ErrorIDToName(result));
     return false;
   }
-  auto package = doc.FirstChildElement("package");
+  auto package = doc->FirstChildElement("package");
   if (!package)
   {
     ESP_LOGE(TAG, "Could not find package element in content.opf");
@@ -282,14 +284,16 @@ bool Epub::parse_toc_ncx_file(ZipFile &zip){
     return false;
   }
   // parse the ncx file
-  tinyxml2::XMLDocument ncx_doc;
-  auto result = ncx_doc.Parse(ncx_data);
+  // tinyxml2::XMLDocument ncx_doc;
+  // auto result = ncx_doc.Parse(ncx_data);
+  auto ncx_doc = std::unique_ptr<tinyxml2::XMLDocument>(new tinyxml2::XMLDocument());
+  auto result = ncx_doc->Parse(ncx_data);
   free(ncx_data);
   if (result != tinyxml2::XML_SUCCESS) {
-    ESP_LOGE(TAG, "Error parsing ncx file - %s", ncx_doc.ErrorIDToName(result));
+    ESP_LOGE(TAG, "Error parsing ncx file - %s", ncx_doc->ErrorIDToName(result));
     return false;
   }
-  auto ncx = ncx_doc.FirstChildElement("ncx");
+  auto ncx = ncx_doc->FirstChildElement("ncx");
   if (!ncx){
     ESP_LOGE(TAG, "Could not find ncx element in ncx file");
     return false;
@@ -307,6 +311,7 @@ bool Epub::parse_toc_ncx_file(ZipFile &zip){
   while (navPoint) {
     // there is id and playOrder attributes on the navPoint element, but we don't need them right now
     auto navLabel = navPoint->FirstChildElement("navLabel")->FirstChildElement("text")->FirstChild();
+    Serial.printf("Parsing TOC entry: %s\n", navLabel ? navLabel->Value() : "Untitled");
     std::string title = navLabel ? navLabel->Value() : "Untitled";
     auto content = navPoint->FirstChildElement("content");
     std::string href = content ? content->Attribute("src") : "";

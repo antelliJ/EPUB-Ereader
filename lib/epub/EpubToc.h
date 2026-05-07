@@ -37,21 +37,27 @@ bool EpubToc::load() {
     {
         // Remove renderer->show_busy() - doesn't exist
         delete epub;
-        epub = new Epub(selected_epub.path);
+        epub = nullptr;
+
+        Epub *new_epub = new Epub(selected_epub.path);
         
         // Feed watchdog during load
         vTaskDelay(1);
         
-        if (!epub->load())
-        {
+        if (!new_epub->load()) {
             ESP_LOGE(TAG, "Failed to load epub for TOC");
+            delete new_epub;
             return false;
         }
+
+        epub = new_epub;
     }
     
     // Validate TOC exists
     if (epub->get_toc_items_count() == 0) {
         ESP_LOGW(TAG, "No TOC entries found");
+        delete epub;
+        epub = nullptr;
         return false;
     }
     
@@ -84,46 +90,49 @@ void EpubToc::render() {
   int cell_height = renderer->get_page_height() / ITEMS_PER_PAGE;
   int start_index = current_page * ITEMS_PER_PAGE;
 
+  bool full_redraw = current_page != state.previous_rendered_page || m_needs_redraw;
+
   do {
   int ypos = 0;
 
-  if (current_page != state.previous_rendered_page || m_needs_redraw)
+
+  if (full_redraw)
   {
-    m_needs_redraw = false;
     renderer->getDisplay().fillScreen(GxEPD_WHITE);
-    state.previous_selected_item = -1;
-    state.previous_rendered_page = current_page;
   }
 
   ESP_LOGI(TAG, "start_index: %d num_toc_items: %d", start_index, epub->get_toc_items_count());
-  for (int i = start_index; i < start_index + ITEMS_PER_PAGE && i < epub->get_toc_items_count(); i++)
+  for (int i = start_index; 
+        i < start_index + ITEMS_PER_PAGE && i < epub->get_toc_items_count(); 
+        i++)
   {
-    if (current_page != state.previous_rendered_page || m_needs_redraw)
-    {
-      int text_xpos = PADDING;
-      int text_ypos = ypos + PADDING + 10;
+    int text_xpos = PADDING;
+    int text_ypos = ypos + PADDING + 10;
 
+    if (full_redraw) {
       renderer->getDisplay().setCursor(text_xpos, text_ypos);
       renderer->getDisplay().setTextColor(GxEPD_BLACK);
       renderer->getDisplay().setFont(&Font5x7Fixed);
       renderer->getDisplay().print(epub->get_toc_item(i).title.c_str());
-
-      // clear previous selection box if page changed
-      if (state.previous_selected_item == i) {
-        renderer->getDisplay().drawRect(0, ypos, renderer->get_page_width() - PADDING/2, cell_height, GxEPD_WHITE);
-      }
-
-      // draw selection box if selected
-      if (state.selected_item == i)
-      {
-        renderer->getDisplay().drawRect(0, ypos, renderer->get_page_width(), cell_height, GxEPD_BLACK);
-      }
-      ypos += cell_height;
     }
-    state.previous_selected_item = state.selected_item;
-    state.previous_rendered_page = current_page;
+
+    if (i == state.selected_item) {
+      // Draw a rectangle around the selected item
+      renderer->getDisplay().drawRect(0, ypos, renderer->get_page_width(), cell_height, GxEPD_BLACK);
+    } else if (state.previous_selected_item == i) {
+      // Clear the rectangle around the previously selected item
+      renderer->getDisplay().drawRect(0, ypos, renderer->get_page_width(), cell_height, GxEPD_WHITE);
+    }
+
+    ypos += cell_height;
   }
 } while (renderer->getDisplay().nextPage());
+
+  // update state
+  m_needs_redraw = false;
+  state.previous_rendered_page = current_page;
+  state.previous_selected_item = state.selected_item;
+
   renderer->getDisplay().hibernate();
 }
 
