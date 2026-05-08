@@ -1,9 +1,12 @@
 //https://randomnerdtutorials.com/esp32-web-server-beginners-guide/
+// https://randomnerdtutorials.com/esp32-mdns-arduino/
+// https://randomnerdtutorials.com/esp32-web-server-littlefs/
 
 #include <Arduino.h>
 
 #include <Wifi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 
 const char *ssid = "ESP32-Access-Point";
 const char *password = "123456789";

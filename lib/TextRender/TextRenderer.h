@@ -472,34 +472,14 @@ public:
 
     DisplayType& getDisplay() { return display; }
 
-    // AI basically made this
-    void show_busy(){
-        // write "Loading..." in a box in the middle of the screen
-        display.setRotation(1);
-        display.setFont(&FreeSansBold9pt7b);
-        display.setTextColor(GxEPD_BLACK);
-        const char* message = "Loading...";
-        int16_t tbx, tby; uint16_t tbw, tbh;
-        display.getTextBounds(message, 0, 0, &tbx, &tby, &tbw, &tbh);
-        int16_t x = (display.width() - tbw) / 2 - tbx;
-        int16_t y = (display.height() - tbh) / 2 - tby;
-        display.setFullWindow();
-        display.firstPage();
-        // use fast method to draw a filled rectangle as background for the message
-        display.fillScreen(GxEPD_WHITE);
-        // display.fillRect(x, y, tbw, tbh, GxEPD_BLACK);
-        display.setCursor(x, y);
-        display.print(message);
-        display.nextPage();
-    }
-
+    
     void clear_screen() {
         display.setFullWindow();
         display.firstPage();
         display.fillScreen(GxEPD_WHITE);
         display.nextPage();
     }
-
+    
     int get_page_height() { return display.height(); }
     int get_page_width() { return display.width(); }
 
@@ -514,5 +494,29 @@ public:
         // display.fillTriangle(x, y+iconSize, x, y+(iconSize*2), x + iconSize/2, y + iconSize, GxEPD_BLACK); // left triangle
         // display.fillTriangle(x+iconSize, y + iconSize, x + iconSize, y + (iconSize*2), x + iconSize/2, y + iconSize, GxEPD_BLACK); // right triangle
         display.drawBitmap(x, y, mark::pixels, mark::xres, mark::yres, GxEPD_BLACK);
+    }
+    
+    // AI basically made this
+    void show_msg(const char* msg) {
+        display.setRotation(1);
+        display.setFont(&FreeSansBold9pt7b);
+        display.setTextColor(GxEPD_BLACK);
+        int16_t tbx, tby; uint16_t tbw, tbh;
+        display.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
+        int16_t x = (display.width() - tbw) / 2 - tbx;
+        int16_t y = (display.height() - tbh) / 2 - tby;
+        display.setFullWindow();
+        display.firstPage();
+        // use fast method to draw a filled rectangle as background for the message
+        display.fillScreen(GxEPD_WHITE);
+        // display.fillRect(x, y, tbw, tbh, GxEPD_BLACK);
+        display.setCursor(x, y);
+        display.print(msg);
+        display.nextPage();
+    }
+
+    void show_busy(){
+        // write "Loading..." in a box in the middle of the screen
+        show_msg("Loading...");
     }
 };

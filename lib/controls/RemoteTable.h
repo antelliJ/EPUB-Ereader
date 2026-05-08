@@ -31,7 +31,7 @@ Button buttons[] = {
       // {0xFFDDFFDD},// setup
   {0xFEFEFEFE, BOOKMARK},// subtitle (red wire gets loose)
       // {0xFFEEFFEE},// audio
-      // {0xFBFBFBFB}// stop
+  {0xFBFBFBFB, SAVE}// stop
 };
 
 void setupRemote() {

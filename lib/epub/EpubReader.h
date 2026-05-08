@@ -32,12 +32,16 @@ private:
 
   std::vector<uint16_t> bookmarks; // list of bookmarks for the current book
 
+  bool want_to_open_last_saved_page = false; // flag to indicate that we want to open the last saved page when we initialize the reader, but we haven't loaded the epub yet so we don't know if the saved page is valid yet
+
 public:
   EpubReader(EpubListItem &state, TextRenderer<DISPLAY_TYPE> *renderer) : state(state), renderer(renderer){};
   ~EpubReader() = default;
   bool load();
   void next();
   void prev();
+  void skip_fwd();
+  void skip_back();
   void render();
   void set_state_section(uint16_t current_section);
   int get_total_pages();
@@ -45,7 +49,7 @@ public:
   int section_page_to_global_page(int section, int page);
   int get_current_page();
   int get_current_page_global();
-  void go_to_page(int global_page); // not used or tested yet
+  void go_to_page(int global_page);
   int get_current_section();
 
   int set_state_page(uint16_t current_page) {
@@ -55,6 +59,10 @@ public:
   void reset_parser() { parser.reset(); }
   void toggle_bookmark(BookmarkManager *manager);
   void retrieve_bookmarks(BookmarkManager *manager);
+  void save_progress(BookmarkManager *manager);
+  void mark_open_last_saved_page();
+  bool get_if_want_to_open_last_saved_page();
+  void open_last_saved_page(BookmarkManager *manager);
 };
 
 bool EpubReader::load()
@@ -72,6 +80,8 @@ bool EpubReader::load()
       return false;
     }
   }
+  // just as a check for the workaround before - just to wrap it if it is out of bounds (but the customer is never wrong?)
+  set_state_section(state.current_section);
   renderer->show_busy();
   total_pages = 0; // reset total pages so it will be recalculated when needed
   return true;
@@ -273,7 +283,7 @@ int EpubReader::section_page_to_global_page(int section, int page) {
 
 void EpubReader::set_state_section(uint16_t current_section) {
   if (!epub) {
-    // just trust that the user knows what they're doing
+    // just trust that the user knows what they're doing (issues of it being out of bounds sort of delt with in load function)
     state.current_section = current_section;
     return;
   }
@@ -460,4 +470,58 @@ void EpubReader::retrieve_bookmarks(BookmarkManager *manager) {
   manager->loadBookmark(state.path, data);
   bookmarks = data.bookmarks;
 
+}
+void EpubReader::save_progress(BookmarkManager *manager) {
+  if (!manager) {
+    manager = new BookmarkManager();
+    manager->init();
+  }
+
+  BookmarkData data;
+  manager->loadBookmark(state.path, data);
+  data.lastPage = get_current_page_global();
+  manager->saveBookmark(state.path, data);
+  renderer->show_msg("Progress saved");
+}
+
+// Mark it so that we want to open the last saved page when we initialize the reader, but don't actually open it yet since we haven't loaded the epub yet and we need to wait until we have the total page count to make sure the saved page is valid
+void EpubReader::mark_open_last_saved_page() {
+  want_to_open_last_saved_page = true;
+}
+
+bool EpubReader::get_if_want_to_open_last_saved_page() {
+  return want_to_open_last_saved_page;
+}
+
+void EpubReader::open_last_saved_page(BookmarkManager *manager) {
+  if (!manager) {
+    manager = new BookmarkManager();
+    manager->init();
+  }
+
+  want_to_open_last_saved_page = false; // reset the flag since we are now opening the last saved page
+
+  BookmarkData data;
+  manager->loadBookmark(state.path, data);
+  if (data.lastPage > 0 && data.lastPage < get_total_pages()) {
+    Serial.printf("Opening last saved page %d\n", data.lastPage);
+    go_to_page(data.lastPage);
+    // renderer->show_msg("Opened last saved page");
+  }
+}
+
+
+void EpubReader::skip_fwd(){
+  set_state_section(get_current_section() + 1);
+  set_state_page(0);
+  // loading new section is opening a new file, so reset the parser to free up memory from the previous section before loading the new one
+  parser.reset();
+  parse_and_layout_current_section();
+}
+
+void EpubReader::skip_back(){
+  set_state_section(get_current_section() - 1);
+  set_state_page(0);
+  parser.reset();
+  parse_and_layout_current_section();
 }

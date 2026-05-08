@@ -8,9 +8,14 @@
 // x fix page numbering in text render and its pointer
 // x section_page_to_global_page and the others should use a hashmap somewhere
 // x add a "go to page" feature that uses the global page number to jump to the correct section and page within that section (for toc)
-// make menu stuff
-// add table of contents support in epub reader
+// x make menu stuff
+// x add table of contents support in epub reader
 // x (just text) add loading img when loading book / section
+// x add bookmark support in epub reader
+// x open last saved page from bookmark when opening book
+// add bookmark export with webserver (current page and the text of the page)
+//    Goto feature
+//    upload and delete books through webserver
 
 // GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
@@ -169,7 +174,6 @@ void setup()
 
   // Serial.printf("PSRAM Total heap %d, PSRAM Free Heap %d\n",ESP.getPsramSize(),ESP.getFreePsram());
 
-  //TODO
   //NEED THIS FOR 3C
   // display.init(115200, true, 2, false); // USE THIS for Waveshare boards with "clever" reset circuit, 2ms reset pulse
   
@@ -327,7 +331,11 @@ void epub_reader_task(void *parameter) {
   EpubReader *reader = (EpubReader *)parameter;
   reader->load();
   reader->retrieve_bookmarks(bookmark_manager);
-  // check if last page saved
+
+  if (reader->get_if_want_to_open_last_saved_page()) {
+    reader->open_last_saved_page(bookmark_manager);
+  }
+  
   reader->render();
   vTaskDelete(NULL);
 }
@@ -390,6 +398,9 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
       if (!reader)
       {
         reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+
+        // say we want to attempt to open last page
+        reader->mark_open_last_saved_page();
         // reader->load();
         xTaskCreatePinnedToCore(epub_reader_task, 
           "Epub Reader Task", 
@@ -401,6 +412,10 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
       }
       handleEpub(renderer, NONE);
       return;
+
+    case BOOKMARK:
+      // TODO: implement bookmark webserver export
+      break;
 
     case NONE:
     default:  
@@ -437,24 +452,22 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
     break;
 
   case REWIND:
-    reader->set_state_section(reader->get_current_section() - 1);
-    reader->set_state_page(0); // reset to first page of new section
+    reader->skip_back();
     reader->render();
     break;
   
   case FAST_FORWARD:
-    reader->set_state_section(reader->get_current_section() + 1);
-    reader->set_state_page(0); // reset to first page of new section
+    reader->skip_fwd();
     reader->render();
     break;
 
   case BOOKMARK:
-    // TODO: implement bookmark
     reader->toggle_bookmark(bookmark_manager);
     break;
 
   case SAVE:
     // TODO: implement save
+    reader->save_progress(bookmark_manager);
     break;
 
   case MENU:
@@ -463,6 +476,10 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
 
     delete reader;
     reader = nullptr;
+    delete bookmark_manager;
+    bookmark_manager = nullptr;
+    delete contents;
+    contents = nullptr;
 
     if (!epub_list)
     {
@@ -536,7 +553,6 @@ void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_a
 
       // added scope since crossing initialization thingy
       {uint16_t selected_section = contents->get_selected_toc_spine();
-      Serial.printf("Selected section: %d\n", selected_section);
 
       delete contents;
       contents = nullptr;
@@ -620,7 +636,7 @@ void checkSerialCmds(){
           epub_list->set_needs_redraw();
           epub_list->render();
         } else if (ui_state == SELECTING_TABLE_CONTENTS) {
-          // contents->render();
+          contents->render();
         }
       }
     } else if (command.equalsIgnoreCase("next")) {
