@@ -16,6 +16,10 @@
 // add bookmark export with webserver (current page and the text of the page)
 //    Goto feature
 //    upload and delete books through webserver
+// 
+//    view bookmarks by creating reader (no rendering tho - headless), then display on webserver
+//       add textRenderer get page content (already exists??)
+//       add feature to prettify the output (not really necessary ig)
 
 // GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
@@ -731,7 +735,7 @@ void loop() {
     web_server->handleClient();
 
     if (web_server->hasPendingGoto()){
-      String book_path = web_server->getPendingFile();
+      String book_path = "/littlefs/" + web_server->getPendingFile();
       int page_num = web_server->getPendingPage();
       Serial.printf("Web server goto request: book %s, page %d\n", book_path.c_str(), page_num);
       if (renderer) {
@@ -740,6 +744,14 @@ void loop() {
 
         delete epub_list;
         epub_list = nullptr;
+
+        // go through epub_list to find the index of the book that matches the requested path, set selected_item to that index
+        for (int i = 0; i < epub_list_state.num_epubs; i++) {
+          if (strcmp(epub_list_state.epub_list[i].path, book_path.c_str()) == 0) {
+            epub_list_state.selected_item = i;
+            break;
+          }
+        }
 
         if (!reader){
           reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
@@ -756,7 +768,7 @@ void loop() {
               1);                 // core 1
         }}
         handleEpub(renderer, NONE);
-        // stop web server after handling goto to prevent multiple gotos in a row without user interaction
+        web_server->clearPendingGoto();
         web_server->stopWebServer();
         
       }

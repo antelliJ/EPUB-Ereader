@@ -91,6 +91,9 @@ function uploadFile(file) {
   const stat = document.getElementById('status');
   wrap.style.display = 'block';
   stat.textContent = 'Uploading ' + file.name + '…';
+
+  const formData = new FormData();
+  formData.append('file', file, file.name);
   const xhr = new XMLHttpRequest();
   xhr.upload.addEventListener('progress', e => {
     if (e.lengthComputable) { bar.value = Math.round(e.loaded / e.total * 100); }
@@ -102,10 +105,13 @@ function uploadFile(file) {
   xhr.addEventListener('error', () => { stat.textContent = '✗ Network error during upload'; });
   xhr.open('POST', '/upload');
   xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
-  xhr.send(file);
+  xhr.send(formData);
+  
 }
 </script>
 )rawhtml";
+
+
 
 // ---------------------------------------------------------------------------
 
@@ -232,6 +238,7 @@ private:
     HTTPUpload &upload = server->upload();
 
     if (upload.status == UPLOAD_FILE_START) {
+      currentFile.close(); // close any previous file (shouldn't be one, but just in case)
       String filename = urlDecode(upload.filename);
       if (!filename.endsWith(".epub") || filename.indexOf("..") >= 0) {
         Serial.println("[webServer] Rejected upload: bad filename");
@@ -241,6 +248,7 @@ private:
       Serial.printf("[webServer] Upload start: %s\n", path.c_str());
       if (LittleFS.exists(path)) {
         LittleFS.remove(path); // overwrite existing
+        delay(10);
       }
       currentFile = LittleFS.open(path, FILE_WRITE);
       if (!currentFile) {
