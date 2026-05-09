@@ -33,6 +33,7 @@ private:
   std::vector<uint16_t> bookmarks; // list of bookmarks for the current book
 
   bool want_to_open_last_saved_page = false; // flag to indicate that we want to open the last saved page when we initialize the reader, but we haven't loaded the epub yet so we don't know if the saved page is valid yet
+  int want_to_go_to_page = -1; // if set to a non-negative value, will go to that global page after loading the epub and calculating pages
 
 public:
   EpubReader(EpubListItem &state, TextRenderer<DISPLAY_TYPE> *renderer) : state(state), renderer(renderer){};
@@ -63,6 +64,7 @@ public:
   void mark_open_last_saved_page();
   bool get_if_want_to_open_last_saved_page();
   void open_last_saved_page(BookmarkManager *manager);
+  int get_want_to_go_to_page() { return want_to_go_to_page; }
 };
 
 bool EpubReader::load()
@@ -379,6 +381,12 @@ int EpubReader::get_current_page_global() {
 }
 
 void EpubReader::go_to_page(int global_page) {
+  if (!epub) {
+    // ESP_LOGW(TAG, "No EPUB loaded, cannot go to page");
+    want_to_go_to_page = global_page; // set the page we want to go to after loading the epub
+    return;
+  }
+
   if (global_page < 0 || global_page >= get_total_pages()) {
     ESP_LOGW(TAG, "Page %d out of range, total pages: %d", global_page, get_total_pages());
     return;

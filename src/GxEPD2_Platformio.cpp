@@ -64,6 +64,7 @@
 #include "State.h"
 
 #include "bookmark.h"
+#include "ClaudeWebServer.h"
 
 // #include "SD.h"
 // #define SD_CS 5
@@ -100,7 +101,8 @@ typedef enum
 {
   SELECTING_EPUB,
   SELECTING_TABLE_CONTENTS,
-  READING_EPUB
+  READING_EPUB,
+  // OPENING_WEB_SERVER
 } UIState;
 
 RTC_NOINIT_ATTR UIState ui_state = SELECTING_EPUB;
@@ -132,6 +134,8 @@ static EpubList *epub_list = nullptr;
 static EpubReader *reader = nullptr;
 static EpubToc *contents = nullptr;
 static BookmarkManager *bookmark_manager = nullptr;
+
+static webServer *web_server = nullptr;
 
 void drawTextPage(int pageNum);
 void epub_read_test(void *parameter);
@@ -335,6 +339,9 @@ void epub_reader_task(void *parameter) {
   if (reader->get_if_want_to_open_last_saved_page()) {
     reader->open_last_saved_page(bookmark_manager);
   }
+  if (reader->get_want_to_go_to_page() != -1) {
+    reader->go_to_page(reader->get_want_to_go_to_page());
+  }
   
   reader->render();
   vTaskDelete(NULL);
@@ -415,6 +422,9 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
 
     case BOOKMARK:
       // TODO: implement bookmark webserver export
+      web_server = new webServer();
+      web_server->startWebServer();
+      renderer->show_msg("Bookmark webserver started");
       break;
 
     case NONE:
@@ -587,6 +597,14 @@ void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_act
   // such as button presses for next/previous page, and it can call renderer->drawPage() accordingly.
   if (!renderer) return; // safety check
 
+  //stop web server if its running, restart device
+  if (ui_action == MENU && web_server) {
+    web_server->stopWebServer();
+    renderer->show_msg("Web server stopped, restarting device...");
+    delay(500);
+    ESP.restart();
+  }
+
   //check if action is none
   // if (ui_action == NONE) return; 
 
@@ -708,6 +726,43 @@ void loop() {
   handleUserInteraction(renderer, action);
   checkSerialCmds();
   // debounce delay
+
+  if (web_server) {
+    web_server->handleClient();
+
+    if (web_server->hasPendingGoto()){
+      String book_path = web_server->getPendingFile();
+      int page_num = web_server->getPendingPage();
+      Serial.printf("Web server goto request: book %s, page %d\n", book_path.c_str(), page_num);
+      if (renderer) {
+        ui_state = READING_EPUB;
+        renderer->clear_screen();
+
+        delete epub_list;
+        epub_list = nullptr;
+
+        if (!reader){
+          reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+          // reader->set_state_section(selected_section);
+          // reader->set_state_page(0); // reset to first page of new section
+          reader->go_to_page(page_num);
+
+          xTaskCreatePinnedToCore(epub_reader_task, 
+              "Epub Reader Task", 
+              16384,              // stack size
+              (void *)reader,  // pass the epub_list pointer as parameter
+              1,                  // priority
+              NULL,
+              1);                 // core 1
+        }}
+        handleEpub(renderer, NONE);
+        // stop web server after handling goto to prevent multiple gotos in a row without user interaction
+        web_server->stopWebServer();
+        
+      }
+    }
+  
+
   delay(100);
 };
 
