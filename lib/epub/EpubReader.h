@@ -67,6 +67,8 @@ public:
   void open_last_saved_page(BookmarkManager *manager);
   int get_want_to_go_to_page() { return want_to_go_to_page; }
   void set_headless(bool headless) { is_headless = headless; }
+
+  std::vector<uint16_t> get_bookmarks() { return bookmarks; }
 };
 
 bool EpubReader::load()

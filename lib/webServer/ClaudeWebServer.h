@@ -126,6 +126,12 @@ private:
   static EpubReader *s_epub_reader;
   static TextRenderer<DISPLAY_TYPE> *s_text_renderer;
 
+  static TaskHandle_t s_server_task_handle;
+  static SemaphoreHandle_t s_reader_ready_sem; // epub loader task signals this when it's ready
+
+  // file change flag
+  static bool s_files_changed;
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   static void handleRoot() {
@@ -175,16 +181,41 @@ private:
         html += F("<p class='empty'>No books found. Upload one below.</p>");
       }
     }
-    html += F("</div>");
+    // bookmark section div
+    html += F("</div style='margin-top:20px; padding:15px; border-top:1px solid #ccc'>");
+    // copy button
+    html += F("<button onclick=\"copyBookmarks()\" style='margin-bottom:10px'>Copy to Clipboard</button>");
     // add little <p> section to write bookmark output
-    html += F("<div class='bookmarkOutput'>");
+    html += F("<pre id='bookmarkOutput' style='white-space:pre-wrap; word-wrap:break-word; "
+              "background:#f4f4f4; padding:10px; border-radius:5px; font-family:monospace;'></pre>");
     html += F("</div>");
     // Bookmarks helper script - redirects to /bookmarks?file=<name> which returns  list of bookmarks, then shows in plaintext for now (could be a modal or something nicer later)
     html += F("<script>"
+              "function selectElementText(elementId) {"
+              "const el = document.getElementById(elementId);"
+              "const range = document.createRange();"
+              "const sel = window.getSelection();"
+              
+              "range.selectNodeContents(el);"
+              "sel.removeAllRanges(); // Clear current selection"
+              "sel.addRange(range);   // Highlight new selection"
+              "}"
+
+
               "function showBookmarks(name){"
+              "const out = document.getElementById('bookmarkOutput');"
+              "out.textContent='Fetching bookmarks…';"
               "fetch('/bookmarks?file='+encodeURIComponent(name),{method:'GET'})"
               ".then(r=>r.text()).then(data=>{"
-              "document.getElementById('bookmarkOutput').textContent=data;})}"
+              "out.textContent=data;})}"
+
+              "function copyBookmarks(){"
+              "const text = document.getElementById('bookmarkOutput').textContent;"
+              "if (!text || text === 'Fetching bookmarks…') { alert('No bookmarks found'); return; }"
+              // "navigator.clipboard.writeText(text).then(()=>{"
+              // "alert('Bookmarks copied to clipboard');"
+              // "}).catch(e=>alert('Copy failed: '+e));}"
+              "selectElementText('bookmarkOutput');}"
               // "if(data.error){alert('Error: '+data.error);return;}"
               // "if(data.bookmarks.length===0){alert('No bookmarks found for '+name);return;}"
               // "alert('Bookmarks for '+name+':\\n'+data.bookmarks.join('\\n'));"
@@ -220,6 +251,7 @@ private:
 
   // POST /delete?file=<name>
   static void handleBookDelete() {
+    s_files_changed = true;
     if (!server->hasArg("file")) {
       server->send(400, "text/plain", "Missing file parameter");
       return;
@@ -273,6 +305,7 @@ private:
   // Called repeatedly as chunks arrive.
   static void handleUploadBody() {
     HTTPUpload &upload = server->upload();
+    s_files_changed = true;
 
     if (upload.status == UPLOAD_FILE_START) {
       currentFile.close(); // close any previous file (shouldn't be one, but just in case)
@@ -401,28 +434,41 @@ private:
     // }
 
     
-    if (s_need_reader) {yield();} // idk if this works
+    // if (s_need_reader) {yield();} // idk if this works
+
+    // block until reader is loaded
+    const TickType_t timeout = pdMS_TO_TICKS(20000); // 20 sec timeout
+    if (xSemaphoreTake(s_reader_ready_sem, timeout) != pdTRUE) {
+      s_need_reader = false;
+      Serial.printf("WEB SERVER BOOKMARK TIMEOUT\n");
+      server->send(504, "text/plain", "Timeout to load: " + file);
+      return;
+    }
+
+
     if (!s_epub_reader) {
       server->send(500, "text/plain", "Failed to load: " + file);
       return;
     }
 
-    // 2. load bookmark data
-    if (!s_bookmark_manager){
-      s_bookmark_manager->init();
-    }
-    String fileStateFormat = "/littlefs/" + server->arg("file"); // following the format of state.h
-    BookmarkData data;
-    s_bookmark_manager->loadBookmark(fileStateFormat, data);
+    // // 2. load bookmark data
+    // if (!s_bookmark_manager){
+    //   s_bookmark_manager->init();
+    // }
+    // String fileStateFormat = "/littlefs/" + server->arg("file"); // following the format of state.h
+    // BookmarkData data;
+    // s_bookmark_manager->loadBookmark(fileStateFormat, data);
+    
+    std::vector<uint16_t> bookmarks = s_epub_reader->get_bookmarks();
 
     Serial.printf("[webServer] bookmarks presumably loaded\n");
 
     // 3. generate response
     String response = "--- BOOKMARKS: " + file + " ---\n\n";
-    if (data.bookmarks.empty()) {
+    if (bookmarks.empty()) {
       response += "No bookmarks\n";
     } else {
-      for (uint16_t globalPage : data.bookmarks) {
+      for (uint16_t globalPage : bookmarks) {
         s_epub_reader->go_to_page(globalPage);
 
         int relPage = s_epub_reader->get_current_page();
@@ -436,8 +482,9 @@ private:
     // maybe delete reader?
     s_epub_reader->set_headless(false);
 
-    Serial.printf("[webServer] handleBookmarks response: %s\n", response.c_str());
+    Serial.printf("[webServer] handleBookmarks response: \n%s\n", response.c_str());
     server->send(200, "text/plain", response);
+    s_epub_reader = nullptr; // main loop will delete
 
 
 
@@ -473,6 +520,13 @@ public:
     s_bookmark_manager = bm;
     s_epub_reader      = reader;
     s_text_renderer    = renderer;
+  }
+
+  static void webServerTask(void *parameter) {
+    while (true) {
+      if (server) server->handleClient();
+      vTaskDelay(pdMS_TO_TICKS(5)); // converts time in milliseconds to RTOS ticks
+    }
   }
 
   static void startWebServer(uint16_t port = 80) {
@@ -516,6 +570,15 @@ public:
     server->collectHeaders(headerNames, 1);
 
     server->begin();
+    s_reader_ready_sem = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(
+      webServerTask, 
+      "Web Server Task", 
+      8192, 
+      NULL, 1, 
+      &s_server_task_handle, 
+      0 // core 0
+    );
     Serial.printf("[webServer] Listening on port %u\n", port);
   }
 
@@ -548,6 +611,9 @@ public:
   int    getPendingPage() const { return s_goto_page; }
   void   clearPendingGoto()    { s_goto_pending = false; s_goto_file = ""; s_goto_page = 0; }
   bool hasPendingReader() const { return s_need_reader; }
+  SemaphoreHandle_t getReaderReadySem() const { return s_reader_ready_sem; }
+  EpubReader *setEpubReader(EpubReader *reader) { return s_epub_reader = reader; }
+  bool ifFilesChanged() const { return s_files_changed; }
 };
 
 // ── Static member definitions ─────────────────────────────────────────────────
@@ -562,3 +628,8 @@ EpubListState *webServer::s_epub_list_state = nullptr;
 BookmarkManager *webServer::s_bookmark_manager = nullptr;
 EpubReader *webServer::s_epub_reader = nullptr;
 TextRenderer<DISPLAY_TYPE> *webServer::s_text_renderer = nullptr;
+
+SemaphoreHandle_t webServer::s_reader_ready_sem = nullptr;
+TaskHandle_t      webServer::s_server_task_handle = nullptr;
+
+bool webServer::s_files_changed= false;

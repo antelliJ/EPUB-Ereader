@@ -15,13 +15,14 @@
 // x open last saved page from bookmark when opening book
 // add bookmark export with webserver (current page and the text of the page)
 //    x? Goto feature (test it more)
-//      - add ui
+//      x - add ui
 //    x upload books through webserver
 //    x delete books through webserver
 // 
-//    view bookmarks by creating reader (no rendering tho - headless), then display on webserver
+//    x view bookmarks by creating reader (no rendering tho - headless), then display on webserver
 //       add textRenderer get page content (already exists??)
 //       add feature to prettify the output (not really necessary ig)
+// only restart device if webserver has made file system writes (some flag) 
 
 //    maybe clean up the discrepencies between how webserver saves filepath, and change to state version
 //        ("/littlefs/" + server->arg("file"))
@@ -329,6 +330,11 @@ int wrap(int start, int end, int wrapNum) {
 void epub_list_load_task(void *parameter) {
   EpubList *list = (EpubList *)parameter;
 
+  if (web_server) {
+    delete web_server;
+    web_server = nullptr;
+  }
+
   Serial.println("Starting EPUB list load task");
   if (list->load("/")) {
     Serial.println("Epub files loaded");
@@ -353,8 +359,15 @@ void epub_reader_task(void *parameter) {
     reader->go_to_page(reader->get_want_to_go_to_page());
   }
 
+  // check if load requested by web server, unblock it now that its loaded
   if (web_server->hasPendingReader()) {
+    Serial.printf("Give Web server Semaphore");
+    // web_server->s_epub_reader = reader; // the epub reader set in web server init
+    web_server->setEpubReader(reader);
     web_server->s_need_reader = false;
+    xSemaphoreGive(web_server->getReaderReadySem());
+    vTaskDelete(NULL);
+    return;
   }
   
   reader->render();
@@ -619,9 +632,34 @@ void handleUserInteraction(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_act
   //stop web server if its running, restart device
   if (ui_action == MENU && web_server) {
     web_server->stopWebServer();
-    renderer->show_msg("Web server stopped, restarting device...");
-    delay(500);
-    ESP.restart();
+    if (web_server->ifFilesChanged()) {
+      renderer->show_msg("Web server stopped, restarting device...");
+      delay(500);
+      ESP.restart();
+    } else {
+      ESP.restart(); // probably faster than setting everything
+
+      // ui_state = SELECTING_EPUB;
+      // delete reader;
+      // reader = nullptr;
+      // delete bookmark_manager;
+      // bookmark_manager = nullptr;
+      // delete contents;
+      // contents = nullptr;
+
+      // if (!epub_list)
+      // {
+      //   epub_list = new EpubList(renderer, epub_list_state);
+      //   xTaskCreatePinnedToCore(epub_list_load_task, 
+      //   "Epub List Load Task", 
+      //   16384,              // stack size
+      //   (void *)epub_list,  // pass the epub_list pointer as parameter
+      //   1,                  // priority
+      //   NULL,
+      //   1);                 // core 1
+      // }
+      // handleEpubList(renderer, NONE, false);
+    }
   }
 
   //check if action is none
@@ -747,7 +785,8 @@ void loop() {
   // debounce delay
 
   if (web_server) {
-    web_server->handleClient();
+    // handleClient no longer neccessary since web server is running on a separate task
+    // web_server->handleClient();
 
     if (web_server->hasPendingGoto()){
       String book_path = "/littlefs/" + web_server->getPendingFile();
@@ -795,6 +834,7 @@ void loop() {
     }
     if (web_server->hasPendingReader()){
       Serial.println("Web server reader request");
+      web_server->setEpubReader(nullptr);
       if (reader){
         delete reader;
         reader = nullptr;
