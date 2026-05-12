@@ -10,6 +10,8 @@
 #include <ESPmDNS.h>
 #include <LittleFS.h>
 
+#include "bookmark.h"
+
 const char *ssid     = "ESP32-Access-Point";
 const char *password = "123456789";
 
@@ -119,6 +121,10 @@ class webServer {
 private:
   static WebServer *server;
   static File       currentFile;
+  static EpubListState  *s_epub_list_state;   // set in constructor, accessible by static handlers
+  static BookmarkManager *s_bookmark_manager; // set in constructor
+  static EpubReader *s_epub_reader;
+  static TextRenderer<DISPLAY_TYPE> *s_text_renderer;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -152,6 +158,11 @@ private:
 
           html += F("<div class='book-row'>");
           html += "<span class='book-title'>" + name + "</span>";
+          // See bookmarks button
+          html += "<button class='btn-bookmarks' onclick=\"showBookmarks('" + name + "')\">Bookmarks</button>";
+          // number input to go to specific page
+          html += "<input type='number' min='1' placeholder='Go to page...'>";
+          html += "<button class='btn-go' onclick=\"goToPage('" + name + "')\">Go</button>";
           html += "<span class='book-size'>" + sizeStr + "</span>";
           // Delete button — posts to /delete?file=<name>
           html += "<button class='btn-delete' onclick=\"deleteBook('" + name + "')\">Delete</button>";
@@ -165,6 +176,32 @@ private:
       }
     }
     html += F("</div>");
+    // add little <p> section to write bookmark output
+    html += F("<div class='bookmarkOutput'>");
+    html += F("</div>");
+    // Bookmarks helper script - redirects to /bookmarks?file=<name> which returns  list of bookmarks, then shows in plaintext for now (could be a modal or something nicer later)
+    html += F("<script>"
+              "function showBookmarks(name){"
+              "fetch('/bookmarks?file='+encodeURIComponent(name),{method:'GET'})"
+              ".then(r=>r.text()).then(data=>{"
+              "document.getElementById('bookmarkOutput').textContent=data;})}"
+              // "if(data.error){alert('Error: '+data.error);return;}"
+              // "if(data.bookmarks.length===0){alert('No bookmarks found for '+name);return;}"
+              // "alert('Bookmarks for '+name+':\\n'+data.bookmarks.join('\\n'));"
+              // "}).catch(e=>alert('Request failed: '+e));}"
+              "</script>");
+    // GoTo helper script
+    html += F("<script>"
+              "function goToPage(name){"
+              "const pageInput = event.target.previousElementSibling;"
+              "const page = parseInt(pageInput.value);"
+              "if (isNaN(page) || page < 1) { alert('Please enter a valid page number'); return; }"
+              "fetch(`/goto?file=${encodeURIComponent(name)}&page=${page}`,{method:'GET'})"
+              ".then(r=>r.json()).then(data=>{"
+              "if(data.error){alert('Error: '+data.error);}"
+              "else{alert(`Success! Will jump to page ${data.page} in ${data.file}`);}"
+              "}).catch(e=>alert('Request failed: '+e));}"
+              "</script>");
 
     // Delete helper script
     html += F("<script>"
@@ -247,6 +284,7 @@ private:
       String path = "/" + filename;
       Serial.printf("[webServer] Upload start: %s\n", path.c_str());
       if (LittleFS.exists(path)) {
+        // will say "does not exist, no permits for creation" in logs, so can just ignore?
         LittleFS.remove(path); // overwrite existing
         delay(10);
       }
@@ -299,7 +337,7 @@ private:
     }
 
     // Store request in static state so the main loop can pick it up.
-    s_goto_file = file;
+    s_goto_file = server->arg("file"); // = file;
     s_goto_page = page;
     s_goto_pending = true;
 
@@ -316,6 +354,94 @@ private:
   //                 ",\"psram\":" + String(ESP.getFreePsram()) + "}";
   //   server->send(200, "application/json", json);
   // }
+
+
+
+  // GET /bookmarks?file=<name.epub>
+  static void handleBookmarks() {
+    Serial.printf("[webServer] handle BOOKMARKS\n");
+    if (!server->hasArg("file")) {
+      server->send(400, "application/json", "{\"error\":\"missing file\"}");
+      return;
+    }
+    // returns "/book.epub"
+    String file = "/" + server->arg("file");
+    if (!LittleFS.exists(file)) {
+      server->send(404, "application/json", "{\"error\":\"file not found\"}");
+      return;
+    }
+
+    // -- complete implementation here -- Everything after this is psuedo code
+    // 1. prep reader
+    if (s_epub_reader) {
+      delete s_epub_reader;
+      s_epub_reader = nullptr; 
+    }
+
+    Serial.printf("[webServer] handleBookmarks file: %s\n", file.c_str());
+    
+    s_need_reader = true;
+    s_goto_file = server->arg("file");
+    // must wait for main loop to pick up reader setup request
+
+    // // go through epub_list to find the index of the book that matches the requested path, set selected_item to that index
+    // for (int i = 0; i < epub_list_state.num_epubs; i++) {
+    //   if (strcmp(epub_list_state.epub_list[i].path, book_path.c_str()) == 0) {
+    //     epub_list_state.selected_item = i;
+    //     break;
+    //   }
+    // }
+
+    // reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+    // reader->set_headless(true);
+
+    // if (reader->load()) {
+    //   server->send(500, "text/plain", "Failed to load: " + file);
+    //   return
+    // }
+
+    
+    if (s_need_reader) {yield();} // idk if this works
+    if (!s_epub_reader) {
+      server->send(500, "text/plain", "Failed to load: " + file);
+      return;
+    }
+
+    // 2. load bookmark data
+    if (!s_bookmark_manager){
+      s_bookmark_manager->init();
+    }
+    String fileStateFormat = "/littlefs/" + server->arg("file"); // following the format of state.h
+    BookmarkData data;
+    s_bookmark_manager->loadBookmark(fileStateFormat, data);
+
+    Serial.printf("[webServer] bookmarks presumably loaded\n");
+
+    // 3. generate response
+    String response = "--- BOOKMARKS: " + file + " ---\n\n";
+    if (data.bookmarks.empty()) {
+      response += "No bookmarks\n";
+    } else {
+      for (uint16_t globalPage : data.bookmarks) {
+        s_epub_reader->go_to_page(globalPage);
+
+        int relPage = s_epub_reader->get_current_page();
+
+        response += "Page " + String(globalPage) + "\n";
+        response += s_text_renderer->getPageContent(relPage);
+        response += "\n\n----------------------------\n\n";
+      }
+    }
+
+    // maybe delete reader?
+    s_epub_reader->set_headless(false);
+
+    Serial.printf("[webServer] handleBookmarks response: %s\n", response.c_str());
+    server->send(200, "text/plain", response);
+
+
+
+  }
 
   // Simple URL decoder for %XX sequences
   static String urlDecode(const String &src) {
@@ -340,8 +466,14 @@ public:
   static String  s_goto_file;
   static int     s_goto_page;
   static bool    s_goto_pending;
+  static bool s_need_reader; // is this needed?
 
-  webServer() {}
+  webServer(EpubListState &state, BookmarkManager *bm = nullptr, EpubReader *reader = nullptr, TextRenderer<DISPLAY_TYPE> *renderer = nullptr) {
+    s_epub_list_state  = &state;
+    s_bookmark_manager = bm;
+    s_epub_reader      = reader;
+    s_text_renderer    = renderer;
+  }
 
   static void startWebServer(uint16_t port = 80) {
     if (server) {
@@ -371,6 +503,7 @@ public:
     server->on("/books",  HTTP_GET,  webServer::handleBookList);
     server->on("/delete", HTTP_POST, webServer::handleBookDelete);
     server->on("/goto",   HTTP_GET,  webServer::handleBookGoto);
+    server->on("/bookmarks", HTTP_GET, webServer::handleBookmarks);
 
     // Upload: completion handler + streaming body handler
     server->on("/upload", HTTP_POST,
@@ -387,6 +520,11 @@ public:
   }
 
   void stopWebServer() {
+    if (s_epub_reader) {
+      // s_epub_reader->set_headless(false);
+      delete s_epub_reader;
+      s_epub_reader = nullptr;
+    }
     if (server) {
       server->stop();
       delete server;
@@ -409,6 +547,7 @@ public:
   String getPendingFile() const { return s_goto_file; }
   int    getPendingPage() const { return s_goto_page; }
   void   clearPendingGoto()    { s_goto_pending = false; s_goto_file = ""; s_goto_page = 0; }
+  bool hasPendingReader() const { return s_need_reader; }
 };
 
 // ── Static member definitions ─────────────────────────────────────────────────
@@ -417,3 +556,9 @@ File       webServer::currentFile;
 String     webServer::s_goto_file  = "";
 int        webServer::s_goto_page  = 0;
 bool       webServer::s_goto_pending = false;
+bool       webServer::s_need_reader = false;
+
+EpubListState *webServer::s_epub_list_state = nullptr;
+BookmarkManager *webServer::s_bookmark_manager = nullptr;
+EpubReader *webServer::s_epub_reader = nullptr;
+TextRenderer<DISPLAY_TYPE> *webServer::s_text_renderer = nullptr;

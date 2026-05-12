@@ -34,6 +34,7 @@ private:
 
   bool want_to_open_last_saved_page = false; // flag to indicate that we want to open the last saved page when we initialize the reader, but we haven't loaded the epub yet so we don't know if the saved page is valid yet
   int want_to_go_to_page = -1; // if set to a non-negative value, will go to that global page after loading the epub and calculating pages
+  bool is_headless = false; // if true, will not render anything, just calculate pages and manage state - used for webserver bookmark viewing
 
 public:
   EpubReader(EpubListItem &state, TextRenderer<DISPLAY_TYPE> *renderer) : state(state), renderer(renderer){};
@@ -65,6 +66,7 @@ public:
   bool get_if_want_to_open_last_saved_page();
   void open_last_saved_page(BookmarkManager *manager);
   int get_want_to_go_to_page() { return want_to_go_to_page; }
+  void set_headless(bool headless) { is_headless = headless; }
 };
 
 bool EpubReader::load()
@@ -73,7 +75,9 @@ bool EpubReader::load()
   // do we need to load the epub?
   if (!epub || epub->get_path() != state.path)
   {
-    renderer->show_busy();
+    if (!is_headless){
+      renderer->show_busy();
+    }
     parser.reset();
     epub = std::unique_ptr<Epub>(new Epub(state.path));
     if (epub->load())
@@ -84,7 +88,9 @@ bool EpubReader::load()
   }
   // just as a check for the workaround before - just to wrap it if it is out of bounds (but the customer is never wrong?)
   set_state_section(state.current_section);
-  renderer->show_busy();
+  if (!is_headless){
+    renderer->show_busy();
+  }
   total_pages = 0; // reset total pages so it will be recalculated when needed
   return true;
 }
@@ -130,6 +136,21 @@ void EpubReader::parse_and_layout_current_section()
     ESP_LOGD(TAG, "After layout: %d", esp_get_free_heap_size());
     ESP_LOGD(TAG, "Section %d has %d pages, current page: %d", state.current_section, renderer->getTotalPages(), state.current_page);
     state.pages_in_current_section = renderer->getTotalPages();
+    // Whatever claude says below
+    //
+    // int pages = renderer->getTotalPages();
+    // // check the cache
+    // // if we have already calculated the page count for this section, use it instead of adding it to total pages again
+    // if (section_page_lengths.find(state.current_section) != section_page_lengths.end()) {
+    //   int cached = section_page_lengths[state.current_section];
+    //   if (cached != pages) {
+    //     ESP_LOGW(TAG, "Page count for section %d differs - renderer=%d, cache=%d", state.current_section, pages, cached);
+    //     // update total pages with the new page count
+    //     pages = cached;
+    //   }
+    // }
+    // state.pages_in_current_section = pages;
+    // section_page_lengths[state.current_section] = pages; // cache the page count for this section
   }
 }
 
@@ -153,7 +174,7 @@ void EpubReader::next()
   if (state.current_page >= state.pages_in_current_section)
   {
     set_state_section(state.current_section + 1);
-    state.current_page = 0;
+    set_state_page(0); // state.current_page
     parser.reset();
     parse_and_layout_current_section();
   }
@@ -204,6 +225,9 @@ void EpubReader::render()
     is_bookmark = true;
   }
   renderer->set_global_pages(&total_pages, &global_current_page);
+  if (is_headless) {
+    return; // don't render anything if we are in headless mode
+  }
   renderer-> drawPage(state.current_page, is_bookmark);
 
   ESP_LOGD(TAG, "rendered page %d of %d", get_current_page_global(), get_total_pages());
@@ -489,7 +513,9 @@ void EpubReader::save_progress(BookmarkManager *manager) {
   manager->loadBookmark(state.path, data);
   data.lastPage = get_current_page_global();
   manager->saveBookmark(state.path, data);
-  renderer->show_msg("Progress saved");
+  if (!is_headless){
+    renderer->show_msg("Progress saved");
+  }
 }
 
 // Mark it so that we want to open the last saved page when we initialize the reader, but don't actually open it yet since we haven't loaded the epub yet and we need to wait until we have the total page count to make sure the saved page is valid

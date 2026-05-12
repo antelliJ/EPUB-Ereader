@@ -236,13 +236,18 @@ bool Epub::parse_content_opf(ZipFile &zip, std::string &content_opf_file)
   {
     std::string item_id = item->Attribute("id");
     std::string href = m_base_path + item->Attribute("href");
+    const char *media_type = item->Attribute("media-type");
     // grab the cover image
     if (cover_item && item_id == cover_item)
     {
       m_cover_image_item = href;
     }
+
+    // detect NCX file by media type -- makes it work with EPUB2 and EPUB3
+    // id="ncx" is a convention yet not requirement in spec
     // grab the ncx file
-    if (item_id == "ncx")
+    // if (item_id == "ncx")
+    if (media_type && strcmp(media_type, "application/x-dtbncx+xml") == 0)
     {
       m_toc_ncx_item = href;
     }

@@ -131,14 +131,15 @@ public:
     bool loadFromHtml(HtmlParser& parser) {
         textElements = parser.getBlocks();
 
-        if (textElements.empty()) {
-            return false;
-        }
         Serial.printf("Loaded %d text elements from HTML parser\n", textElements.size());
         
         pageStarts.clear();
         pageStarts.push_back(0); // First page starts at index 0
         currentPage = 0;
+
+        if (textElements.empty()) {
+            return false;
+        }
 
         return true;
     }
@@ -296,7 +297,7 @@ public:
                             ? pageStarts[pageNum + 1] 
                             : textElements.size();
 
-        String content;
+        String content = "";
         for (size_t i = startIndex; i < endIndex; i++) {
             content += textElements[i].text.c_str();
             if (textElements[i].isBlockEnd) {

@@ -14,12 +14,17 @@
 // x add bookmark support in epub reader
 // x open last saved page from bookmark when opening book
 // add bookmark export with webserver (current page and the text of the page)
-//    Goto feature
-//    upload and delete books through webserver
+//    x? Goto feature (test it more)
+//      - add ui
+//    x upload books through webserver
+//    x delete books through webserver
 // 
 //    view bookmarks by creating reader (no rendering tho - headless), then display on webserver
 //       add textRenderer get page content (already exists??)
 //       add feature to prettify the output (not really necessary ig)
+
+//    maybe clean up the discrepencies between how webserver saves filepath, and change to state version
+//        ("/littlefs/" + server->arg("file"))
 
 // GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
@@ -177,6 +182,7 @@ void setup()
   File file = root.openNextFile();
   while(file){
       Serial.printf(" - File: %s, Size: %u\n", file.name(), file.size());
+      file.close();
       file = root.openNextFile();
   }
 
@@ -346,6 +352,10 @@ void epub_reader_task(void *parameter) {
   if (reader->get_want_to_go_to_page() != -1) {
     reader->go_to_page(reader->get_want_to_go_to_page());
   }
+
+  if (web_server->hasPendingReader()) {
+    web_server->s_need_reader = false;
+  }
   
   reader->render();
   vTaskDelete(NULL);
@@ -426,7 +436,12 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
 
     case BOOKMARK:
       // TODO: implement bookmark webserver export
-      web_server = new webServer();
+      if (web_server) {
+        web_server->stopWebServer();
+        delete web_server;
+        web_server = nullptr;
+      }
+      web_server = new webServer(epub_list_state, bookmark_manager, reader, renderer);
       web_server->startWebServer();
       renderer->show_msg("Bookmark webserver started");
       break;
@@ -753,11 +768,15 @@ void loop() {
           }
         }
 
+        delete reader;
+        reader = nullptr;
+
         if (!reader){
           reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
           // reader->set_state_section(selected_section);
           // reader->set_state_page(0); // reset to first page of new section
-          reader->go_to_page(page_num);
+          reader->go_to_page(page_num-1); // people are one-indexed, but we are zero-indexed
+          reader->set_headless(false);
 
           xTaskCreatePinnedToCore(epub_reader_task, 
               "Epub Reader Task", 
@@ -767,11 +786,38 @@ void loop() {
               NULL,
               1);                 // core 1
         }}
-        handleEpub(renderer, NONE);
         web_server->clearPendingGoto();
         web_server->stopWebServer();
+        ui_state = READING_EPUB;
+        handleEpub(renderer, NONE);
         
       }
+    }
+    if (web_server->hasPendingReader()){
+      Serial.println("Web server reader request");
+      if (reader){
+        delete reader;
+        reader = nullptr;
+      }
+      String book_path = "/littlefs/" + web_server->getPendingFile();
+      // go through epub_list to find the index of the book that matches the requested path, set selected_item to that index
+        for (int i = 0; i < epub_list_state.num_epubs; i++) {
+          if (strcmp(epub_list_state.epub_list[i].path, book_path.c_str()) == 0) {
+            epub_list_state.selected_item = i;
+            break;
+          }
+        }
+      reader = new EpubReader(epub_list_state.epub_list[epub_list_state.selected_item], renderer);
+      reader->set_headless(true);
+      xTaskCreatePinnedToCore(epub_reader_task, 
+          "Epub Reader Task", 
+          16384,              // stack size
+          (void *)reader,  // pass the epub_list pointer as parameter
+          1,                  // priority
+          NULL,
+          1);                 // core 1
+
+      
     }
   
 

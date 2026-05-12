@@ -11,7 +11,7 @@ const int MAX_TITLE_SIZE = 100;
 // nice and simple state that can be persisted easily
 typedef struct
 {
-  char path[MAX_PATH_SIZE];
+  char path[MAX_PATH_SIZE]; // Saved as "/littlefs/{filename}.epub"
   char title[MAX_TITLE_SIZE];
   uint16_t current_section;
   uint16_t current_page;
