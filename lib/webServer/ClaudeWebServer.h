@@ -143,6 +143,37 @@ private:
   // GET /books — HTML page listing all epubs in LittleFS
   static void handleBookList() {
     String html = FPSTR(HTML_HEADER);
+    // Storage progress bar
+    html += F("<div style='margin-bottom:1rem'>"
+                "<div style='display:flex;justify-content:space-between; align-items:baseline; margin-bottom:.5rem'>"
+                  "<span style='font-size:13px;color:#888'>Storage</span>"
+                  "<span style='font-size:13px;color:#888' id='stor-label'>...</span>"
+                "</div>"
+                "<div style='height:10px;border-radius:5px;background:#eee;overflow:hidden'>"
+                "  <div id='stor-bar' style='height:100%;width:0%;border-radius:5px;transition:width .4s ease'></div>"
+                "</div>"
+                "<div style='display:flex;justify-content:space-between; margin-top:4px'>"
+                  "<span style='font-size:11px;color:#aaa' id='stor-pct'>0 percent used</span>"
+                  "<span style='font-size:11px;color:#aaa' id='stor-free'></span>"
+                "</div>"
+              "</div>");
+
+    html += F("<script>"
+              "fetch('/api/storage').then(res => res.json()).then(data => {"
+              "var pct = Math.round(data.used / data.total * 100);"
+              "var usedMB = (data.used / 1048576).toFixed(2);"
+              "var totalMB = (data.total / 1048576).toFixed(2);"
+              "var freeMB = ((data.total - data.used) / 1048576).toFixed(2);"
+              "document.getElementById('stor-bar').style.width = pct + '%';"
+              "document.getElementById('stor-bar').style.background = pct>85?'#E24B4A':pct>65?'#EF9F27':'#8b4513';"
+              "document.getElementById('stor-label').textContent = usedMB + ' MB used of ' + totalMB + ' MB';"
+              "document.getElementById('stor-pct').textContent = pct + ' percent used';"
+              "document.getElementById('stor-free').textContent = freeMB + ' MB';"
+              "});"
+              "</script>"
+              );
+    
+
     html += F("<div class='card'><h2>Your Library</h2>");
 
     File root = LittleFS.open("/");
@@ -182,7 +213,8 @@ private:
       }
     }
     // bookmark section div
-    html += F("</div style='margin-top:20px; padding:15px; border-top:1px solid #ccc'>");
+    html += F("</div>");
+    html += F("<div style='margin-top:20px; padding:15px; border-top:1px solid #ccc'>");
     // copy button
     html += F("<button onclick=\"copyBookmarks()\" style='margin-bottom:10px'>Copy to Clipboard</button>");
     // add little <p> section to write bookmark output
@@ -197,8 +229,8 @@ private:
               "const sel = window.getSelection();"
               
               "range.selectNodeContents(el);"
-              "sel.removeAllRanges(); // Clear current selection"
-              "sel.addRange(range);   // Highlight new selection"
+              "sel.removeAllRanges();"
+              "sel.addRange(range);"
               "}"
 
 
@@ -508,6 +540,13 @@ private:
     return decoded;
   }
 
+  static void handleApiStorage(){
+    size_t total = LittleFS.totalBytes();
+    size_t used = LittleFS.usedBytes();
+    String json = "{\"total\":" + String(total) + ",\"used\":" + String(used) + "}";
+    server->send(200, "application/json", json);
+  }
+
 public:
   // ── Pending goto request (poll from main loop) ────────────────────────────
   static String  s_goto_file;
@@ -558,6 +597,7 @@ public:
     server->on("/delete", HTTP_POST, webServer::handleBookDelete);
     server->on("/goto",   HTTP_GET,  webServer::handleBookGoto);
     server->on("/bookmarks", HTTP_GET, webServer::handleBookmarks);
+    server->on("/api/storage", HTTP_GET, webServer::handleApiStorage);
 
     // Upload: completion handler + streaming body handler
     server->on("/upload", HTTP_POST,
