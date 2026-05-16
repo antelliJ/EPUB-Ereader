@@ -18,7 +18,7 @@
 #include "State.h"
 #include "epub.h"
 
-#define MAX_FAST_REFRESHES 5
+#define MAX_FAST_REFRESHES 4
 #define FAST_REFRESH_TIMEOUT 30000  // 30s
 
 #ifndef HALLUCINATION // courtesy of Grok
@@ -59,6 +59,7 @@ static GxEPD2_BW<GxEPD2_420_GDEY042T81, GxEPD2_420_GDEY042T81::HEIGHT> *s_jpeg_d
 static int s_jpeg_x_offset = 0;
 static int s_jpeg_y_offset = 0;
 
+
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
     // allocate line buffer on heap, not stack
     uint8_t *lineBuf = (uint8_t *)malloc((pDraw->iWidth + 7) / 8);
@@ -88,6 +89,24 @@ static int jpegDrawCallback(JPEGDRAW *pDraw) {
     return 1;
 }
 
+// for dithered images
+static int jpegDrawCallback2(JPEGDRAW *pDraw) {
+    if (pDraw->iBpp == 1) {
+        // ONE_BIT_DITHERED: pixels are already packed 1bpp, copy row by row
+        int pitch = (pDraw->iWidth + 7) / 8;
+        for (int y = 0; y < pDraw->iHeight; y++) {
+            uint8_t *src = (uint8_t *)pDraw->pPixels + y * pitch;
+            s_jpeg_display->drawBitmap(
+                s_jpeg_x_offset + pDraw->x,
+                s_jpeg_y_offset + pDraw->y + y,
+                src, pDraw->iWidth, 1,
+                GxEPD_WHITE,
+                GxEPD_BLACK
+            );
+        }
+    }
+    return 1;
+}
 
 
 #include "TextBlock.h"
@@ -123,6 +142,8 @@ private:
 
     int* global_total_pages = 0;
     int* global_current_page = 0;
+
+    bool do_dither = true;
 
 
     const GFXfont* getFontForStyle(SPAN_STYLE style) {
@@ -260,12 +281,22 @@ public:
 
         Serial.printf("opening jpeg ram %s\n", fullPath.c_str());
 
+        
         JPEGDEC jpeg;
-        if (!jpeg.openRAM(imageData, imageSize, jpegDrawCallback)) {
-            ESP_LOGE(TAG, "JPEGDEC failed to open image");
-            // heap_caps_free(imageData);
-            free(imageData);
-            return 0;
+        if (getDither()){
+            if (!jpeg.openRAM(imageData, imageSize, jpegDrawCallback2)) {
+                ESP_LOGE(TAG, "JPEGDEC failed to open image");
+                // heap_caps_free(imageData);
+                free(imageData);
+                return 0;
+            }
+        } else {
+            if (!jpeg.openRAM(imageData, imageSize, jpegDrawCallback)) {
+                ESP_LOGE(TAG, "JPEGDEC failed to open image");
+                // heap_caps_free(imageData);
+                free(imageData);
+                return 0;
+            }
         }
 
         int imgW = jpeg.getWidth();
@@ -287,7 +318,26 @@ public:
         s_jpeg_x_offset = x + (maxWidth - (int)(imgW * scale)) / 2; // center horizontally
         s_jpeg_y_offset = y;
 
-        jpeg.decode(0, 0, jpegScale);
+        if (getDither()){
+            // uint8_t *pDither = (uint8_t *)malloc((imgW+16)*16);
+            int mcuWidth = (imgW + 15) & ~15;  // round up to nearest 16
+            uint8_t *pDither = (uint8_t *)malloc(mcuWidth * 16);
+            if (!pDither) {
+                ESP_LOGE(TAG, "Failed to allocate dither buffer");
+                jpeg.close();
+                free(imageData);
+                return 0;
+            }
+    
+            // jpeg.decode(0, 0, jpegScale);
+            jpeg.setPixelType(ONE_BIT_DITHERED);
+            jpeg.decodeDither(0, 0, pDither, jpegScale);
+    
+            free(pDither);
+        } else {
+            jpeg.decode(0, 0, jpegScale);
+        }
+
         jpeg.close();
         // heap_caps_free(imageData);
         free(imageData);
@@ -406,7 +456,7 @@ public:
                     if (y + imageHeight > get_page_height()) {
                         break;
                     }
-                    int used = renderImage(curEpub, element.imageSrc, 10, y, 
+                    int used = renderImage(curEpub, element.imageSrc, 0, y, 
                     get_page_width(), imageHeight);
 
                     y += used;
@@ -621,8 +671,8 @@ private:
                     return true;
                 }
                 Serial.printf("Rendering image %s\n", element.imageSrc.c_str());
-                int used = renderImage(curEpub, element.imageSrc, 10, y, 
-                    get_page_width() - 5*2, get_page_height() / 2, true);
+                int used = renderImage(curEpub, element.imageSrc, 0, y, 
+                    get_page_width(), get_page_height(), true);
 
                 y += used;
                 continue;
@@ -712,5 +762,13 @@ public:
     void show_busy(){
         // write "Loading..." in a box in the middle of the screen
         show_msg("Loading...");
+    }
+
+    void setDither(bool dither){
+        do_dither = dither;
+    }
+
+    bool getDither(){
+        return do_dither;
     }
 };

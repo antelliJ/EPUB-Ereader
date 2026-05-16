@@ -469,6 +469,10 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
       renderer->getDisplay().hibernate();
       break;
 
+    case FORCE_FULL_REFRESH:
+      renderer->forceFullRefresh();
+      break;
+
     case NONE:
     default:  
     if (needs_redraw) {
@@ -566,6 +570,21 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
     }
     handleEpubTableContents(renderer, NONE, true);
     return;
+
+  case FORCE_FULL_REFRESH:
+    renderer->forceFullRefresh();
+    if (reader){
+      reader->render();
+    }
+    break;
+
+  case SETUP:
+    // will change dither mode, then rerender current page
+    renderer->setDither(!renderer->getDither());
+    if (reader){
+      reader->render();
+    }
+    break;
 
   case NONE:
   default:

@@ -12,5 +12,7 @@ typedef enum
   FAST_FORWARD, // >>
   BOOKMARK, // subtitle?
   SAVE, // Stop?
+  FORCE_FULL_REFRESH, // Audio?
+  SETUP, // Setup - will change dither mode
   LAST_INTERACTION
 } UIAction;

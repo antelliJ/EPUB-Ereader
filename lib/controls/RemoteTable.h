@@ -28,9 +28,9 @@ Button buttons[] = {
   {0xFFFFBBBB, FAST_FORWARD}, // >>
   {0x77777777, UP},// up arrow
   {0xBBBBBBBB, DOWN},// down arrow
-      // {0xFFDDFFDD},// setup
+  {0xFFDDFFDD, SETUP},// setup
   {0xFEFEFEFE, BOOKMARK},// subtitle (red wire gets loose)
-      // {0xFFEEFFEE},// audio
+  {0xFFEEFFEE, FORCE_FULL_REFRESH},// audio
   {0xFBFBFBFB, SAVE}// stop
 };
 
