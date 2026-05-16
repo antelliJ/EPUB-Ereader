@@ -124,6 +124,7 @@ RTC_DATA_ATTR EpubListState epub_list_state;
 
 // the state data for the epub index list
 RTC_DATA_ATTR EpubTocState epub_index_state = {0, 0, 0}; 
+RTC_DATA_ATTR FastRefreshState fast_refresh_state = {0, 0, false};
 
 SPIClass hspi(HSPI);
 
@@ -197,6 +198,8 @@ void setup()
   Serial.printf("Debug: free heap: %d\n", ESP.getFreeHeap());
   Serial.printf("Debug: available PSRAM heap: %d\n", ESP.getFreePsram());
   renderer = new TextRenderer<DISPLAY_TYPE>(display);
+  renderer->set_fast_refresh_state(&fast_refresh_state);
+  renderer->forceFullRefresh();
 
   // helloWorld();
   // display.hibernate();
@@ -438,7 +441,7 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
         // reader->load();
         xTaskCreatePinnedToCore(epub_reader_task, 
           "Epub Reader Task", 
-          16384,              // stack size
+          32768,              // stack size
           (void *)reader,  // pass the epub_list pointer as parameter
           1,                  // priority
           NULL,
@@ -459,6 +462,13 @@ void handleEpubList(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action, bo
       renderer->show_msg("Bookmark webserver started");
       break;
 
+    case SAVE:
+      // render a white screen to prevent burn in
+      renderer->forceFullRefresh();
+      renderer->clear_screen();
+      renderer->getDisplay().hibernate();
+      break;
+
     case NONE:
     default:  
     if (needs_redraw) {
@@ -473,7 +483,7 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
     reader = new EpubReader(epub_list_state.epub_list[0], renderer);
     xTaskCreatePinnedToCore(epub_reader_task, 
           "Epub Reader Task", 
-          16384,              // stack size
+          32768,              // stack size
           (void *)reader,  // pass the epub_list pointer as parameter
           1,                  // priority
           NULL,
@@ -606,7 +616,7 @@ void handleEpubTableContents(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_a
         
         xTaskCreatePinnedToCore(epub_reader_task, 
             "Epub Reader Task", 
-            16384,              // stack size
+            32768,              // stack size
             (void *)reader,  // pass the epub_list pointer as parameter
             1,                  // priority
             NULL,
@@ -819,7 +829,7 @@ void loop() {
 
           xTaskCreatePinnedToCore(epub_reader_task, 
               "Epub Reader Task", 
-              16384,              // stack size
+              32768,              // stack size
               (void *)reader,  // pass the epub_list pointer as parameter
               1,                  // priority
               NULL,
@@ -851,7 +861,7 @@ void loop() {
       reader->set_headless(true);
       xTaskCreatePinnedToCore(epub_reader_task, 
           "Epub Reader Task", 
-          16384,              // stack size
+          32768,              // stack size
           (void *)reader,  // pass the epub_list pointer as parameter
           1,                  // priority
           NULL,

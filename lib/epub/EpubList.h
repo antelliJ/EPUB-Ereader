@@ -100,7 +100,7 @@ public:
   void render() {
 
     renderer->getDisplay().setRotation(1);
-    renderer->getDisplay().setFullWindow();
+    renderer->prepareRefresh();
     renderer->getDisplay().firstPage();
     
     int current_page = state.selected_item / EPUBS_PER_PAGE;

@@ -43,7 +43,7 @@ const int NUM_BOLD_TAGS = sizeof(BOLD_TAGS) / sizeof(BOLD_TAGS[0]);
 const char *ITALIC_TAGS[] = {"i", "em"};
 const int NUM_ITALIC_TAGS = sizeof(ITALIC_TAGS) / sizeof(ITALIC_TAGS[0]);
 
-const char *IMAGE_TAGS[] = {"img"};
+const char *IMAGE_TAGS[] = {"img", "image"};
 const int NUM_IMAGE_TAGS = sizeof(IMAGE_TAGS) / sizeof(IMAGE_TAGS[0]);
 
 const char *SKIP_TAGS[] = {"head", "table"};
@@ -141,6 +141,17 @@ bool is_whitespace(char c)
     }
   };
 
+  bool isJpeg(const char *src) {
+    if (!src) return false;
+
+    std::string s(src);
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+
+    if (s.length() >= 4 && s.substr(s.length() - 4) == ".jpg") return true;
+    if (s.length() >= 5 && s.substr(s.length() - 5) == ".jpeg") return true;
+    return false;
+  }
+
   void parseNode(tinyxml2::XMLNode *node, bool isBold, bool isItalic) {
     if (node == nullptr) return;
 
@@ -183,8 +194,18 @@ bool is_whitespace(char c)
       bool newIsBold = isBold || matches(tag_name, BOLD_TAGS, NUM_BOLD_TAGS);
       bool newIsItalic = isItalic || matches(tag_name, ITALIC_TAGS, NUM_ITALIC_TAGS);
 
-      if (strcmp(tag_name, "img")==0) {
-        blocks.push_back(TextElement("[IMAGE]", ITALIC_SPAN)); // Placeholder for images, could be improved to store src or even render the image
+      bool isImage = matches(tag_name, IMAGE_TAGS, NUM_IMAGE_TAGS);
+      if (isImage) {
+        // blocks.push_back(TextElement("[IMAGE]", ITALIC_SPAN)); // Placeholder for images, could be improved to store src or even render the image
+        const char *src = element->Attribute("src");
+        if (!src) src = element->Attribute("xlink:href");
+        // also only continue if src is a jpg or jpeg
+        if (src && isJpeg(src)) { 
+          blocks.push_back(TextElement::makeImage(src));
+        } else {
+          blocks.push_back(TextElement("[IMAGE]", ITALIC_SPAN)); // Placeholder for images, could be improved to store src or even render the image
+        }
+        return;
       }
 
       // Recursively parse child nodes with updated styles

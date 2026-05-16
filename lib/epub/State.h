@@ -36,3 +36,14 @@ typedef struct
   int previous_selected_item;
   int selected_item;
 } EpubTocState;
+
+// type for epaper fast refresh
+// amt of fast refreshes
+// time since last fast refresh
+// if last refresh was fast refresh
+typedef struct
+{
+  uint16_t amt_fast_refreshes;
+  uint32_t last_fast_refresh_time;
+  bool was_last_fast_refresh;
+} FastRefreshState;

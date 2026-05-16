@@ -87,6 +87,8 @@ bool EpubReader::load()
       ESP_LOGI(TAG, "After epub load: %d", esp_get_free_heap_size());
       return false;
     }
+
+    renderer->set_current_epub(epub.get());
   }
   // just as a check for the workaround before - just to wrap it if it is out of bounds (but the customer is never wrong?)
   set_state_section(state.current_section);
@@ -130,6 +132,7 @@ void EpubReader::parse_and_layout_current_section()
     free(html);
     // parser->layout(renderer, epub);
     /* LOAD FROM HTML IS ALSO CAUSING ISSUES WITH CURRENT SECTION AND CURRENT PAGE*/
+    renderer->set_current_epub(epub.get());
     renderer->loadFromHtml(*parser);
     Serial.printf("Debug: loaded html into renderer, now calculating pages: -- current_section: %d, current_page: %d\n", state.current_section, state.current_page);
     
@@ -230,6 +233,7 @@ void EpubReader::render()
   if (is_headless) {
     return; // don't render anything if we are in headless mode
   }
+  renderer->set_current_epub(epub.get());
   renderer-> drawPage(state.current_page, is_bookmark);
 
   ESP_LOGD(TAG, "rendered page %d of %d", get_current_page_global(), get_total_pages());
@@ -241,6 +245,7 @@ int EpubReader::current_page_to_section_page(int current_page) {
   int accumulated_page = 0;
   std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
   std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
+  temp_renderer->set_current_epub(epub.get());
   for (int i = 0; i < min((int)state.current_section, epub->get_spine_items_count()); i++) {
     // check if this section is already calculated and stored in section_page_lengths vector
     if (i < section_page_lengths.size()) {
@@ -279,6 +284,7 @@ int EpubReader::section_page_to_global_page(int section, int page) {
   int global_page = 0;
   std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
   std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
+  temp_renderer->set_current_epub(epub.get());
   for (int i = 0; i < section; i++) {
     // check if this section is already calculated and stored in section_page_lengths map
     // btw end is a theoretical thing that just signifies the end of the map, it is not actually a valid section index
@@ -337,6 +343,7 @@ int EpubReader::get_total_pages() {
   std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
   std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
   int pages = 0;
+  temp_renderer->set_current_epub(epub.get());
 
   for (int i = 0; i < epub->get_spine_items_count(); i++) {
     // check if this section is already calculated and stored in section_page_lengths vector
@@ -356,6 +363,7 @@ int EpubReader::get_total_pages() {
     temp_renderer->loadFromHtml(*temp_parser);
     Serial.printf("Debug: loaded html, now calculating pages:\n");
     temp_renderer->calculateAllPages();
+    Serial.printf("Debug: calced pages, now getting total pages:\n");
     pages += temp_renderer->getTotalPages();
     //DEBUG PRINT THE FIRST AND LAST WORD OF THE LAST PAGE TO MAKE SURE IT IS CALCULATING THE GLOBAL PAGE NUMBER CORRECTLY 
   
@@ -426,6 +434,7 @@ void EpubReader::go_to_page(int global_page) {
     } else {
       std::unique_ptr<HtmlParser> temp_parser(new HtmlParser());
       std::unique_ptr<TextRenderer<DISPLAY_TYPE>> temp_renderer(new TextRenderer<DISPLAY_TYPE>(renderer->getDisplay()));
+      temp_renderer->set_current_epub(epub.get());
       
       std::string item = epub->get_spine_item(i);
       std::string base_path = item.substr(0, item.find_last_of('/') + 1);

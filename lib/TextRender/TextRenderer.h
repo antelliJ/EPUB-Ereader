@@ -15,6 +15,12 @@
 
 #include "Arduino.h"
 
+#include "State.h"
+#include "epub.h"
+
+#define MAX_FAST_REFRESHES 5
+#define FAST_REFRESH_TIMEOUT 30000  // 30s
+
 #ifndef HALLUCINATION // courtesy of Grok
 #define HALLUCINATION
 #include <esp_heap_caps.h>
@@ -25,9 +31,9 @@ void* operator new(size_t size) {
   return ptr;
 }
 
-void operator delete(void* ptr) {
-  if (ptr) heap_caps_free(ptr);
-}
+// void operator delete(void* ptr) {
+//   if (ptr) heap_caps_free(ptr);
+// }
 
 void* operator new[](size_t size) {
   void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -35,10 +41,54 @@ void* operator new[](size_t size) {
   return ptr;
 }
 
+// void operator delete[](void* ptr) {
+//   if (ptr) heap_caps_free(ptr);
+// }
+
+void operator delete(void* ptr) {
+    if (ptr) free(ptr);  // free() works for both PSRAM and internal heap
+}
+
 void operator delete[](void* ptr) {
-  if (ptr) heap_caps_free(ptr);
+    if (ptr) free(ptr);
 }
 #endif
+
+#include <JPEGDEC.h>
+static GxEPD2_BW<GxEPD2_420_GDEY042T81, GxEPD2_420_GDEY042T81::HEIGHT> *s_jpeg_display = nullptr; // maybe use the proper types?
+static int s_jpeg_x_offset = 0;
+static int s_jpeg_y_offset = 0;
+
+static int jpegDrawCallback(JPEGDRAW *pDraw) {
+    // allocate line buffer on heap, not stack
+    uint8_t *lineBuf = (uint8_t *)malloc((pDraw->iWidth + 7) / 8);
+    if (!lineBuf) return 0;
+
+    for (int y = 0; y < pDraw->iHeight; y++) {
+        memset(lineBuf, 0xFF, (pDraw->iWidth + 7) / 8);
+        for (int x = 0; x < pDraw->iWidth; x++) {
+            uint16_t px = pDraw->pPixels[y * pDraw->iWidth + x];
+            uint8_t r = ((px >> 11) & 0x1F) << 3;
+            uint8_t g = ((px >> 5)  & 0x3F) << 2;
+            uint8_t b = (px & 0x1F) << 3;
+            uint8_t gray = (r * 299 + g * 587 + b * 114) / 1000;
+            if (gray < 128) {
+                lineBuf[x / 8] &= ~(0x80 >> (x % 8)); // set bit black
+            }
+        }
+        s_jpeg_display->drawBitmap(
+            s_jpeg_x_offset + pDraw->x,
+            s_jpeg_y_offset + pDraw->y + y,
+            lineBuf, pDraw->iWidth, 1,
+            GxEPD_WHITE,
+            GxEPD_BLACK
+        );
+    }
+    free(lineBuf);
+    return 1;
+}
+
+
 
 #include "TextBlock.h"
 #include "HtmlParser.h"
@@ -57,6 +107,10 @@ private:
     std::vector<size_t> pageStarts; // Stores the starting index of each page in textData
 
     std::vector<TextElement> textElements;
+
+    FastRefreshState *fastRefreshState;
+
+    Epub *curEpub = nullptr;
 
     int currentPage;
 
@@ -98,10 +152,48 @@ public:
 
     ~TextRenderer() {}
 
+    void set_fast_refresh_state(FastRefreshState *state) {
+        fastRefreshState = state;
+    }
+
+    void set_current_epub(Epub *epub) {
+        curEpub = epub;    
+    }
+    
+
     void set_global_pages(int *total_pages_ptr, int *current_page_ptr) {
     global_total_pages = total_pages_ptr;
     global_current_page = current_page_ptr;
   }
+
+    void prepareRefresh() {
+        uint32_t now = millis();
+        bool timedOut = (now - fastRefreshState->last_fast_refresh_time) > FAST_REFRESH_TIMEOUT;
+        bool tooManyFast = fastRefreshState->amt_fast_refreshes >= MAX_FAST_REFRESHES;
+        bool doFull = tooManyFast || (timedOut && fastRefreshState->was_last_fast_refresh);
+
+        // comment this out when everything works
+        // doFull = true;
+
+        if (doFull) {
+            display.setFullWindow();
+            fastRefreshState->amt_fast_refreshes = 0;
+            fastRefreshState->was_last_fast_refresh = false;
+            Serial.printf("[Renderer] Full refresh (timedOut=%d tooMany=%d)\n", timedOut, tooManyFast);
+        } else {
+            display.setPartialWindow(0, 0, display.width(), display.height());
+            fastRefreshState->amt_fast_refreshes++;
+            fastRefreshState->was_last_fast_refresh = true;
+            fastRefreshState->last_fast_refresh_time = now;
+            Serial.printf("[Renderer] Fast refresh %d/%d\n", fastRefreshState->amt_fast_refreshes, MAX_FAST_REFRESHES);
+        }
+    }
+
+    void forceFullRefresh(){
+        fastRefreshState->amt_fast_refreshes = MAX_FAST_REFRESHES;
+        fastRefreshState->was_last_fast_refresh = true;
+        fastRefreshState->last_fast_refresh_time = 0;
+    }
 
   
 
@@ -144,6 +236,67 @@ public:
         return true;
     }
 
+    // returns height consumed so text layout advances accordingly
+    int renderImage(Epub *epub, const std::string &imageSrc, int x, int y, int maxWidth, int maxHeight, bool dryRun = false) 
+    {
+        if (dryRun) {
+            return maxHeight;
+        }
+        if (!epub) {
+            ESP_LOGE(TAG, "Epub is null");
+            return 0;
+        }
+        // std::string fullPath = normalise_path(basePath + imageSrc);
+        std::string fullPath = epub->get_base_path() + imageSrc;
+
+        Serial.printf("Loading image data: %s\n", fullPath.c_str());
+        size_t imageSize = 0;
+        uint8_t *imageData = epub->get_item_contents(fullPath, &imageSize);
+
+        if (!imageData) {
+            ESP_LOGE(TAG, "Failed to read image %s", fullPath.c_str());
+            return 0;
+        }
+
+        Serial.printf("opening jpeg ram %s\n", fullPath.c_str());
+
+        JPEGDEC jpeg;
+        if (!jpeg.openRAM(imageData, imageSize, jpegDrawCallback)) {
+            ESP_LOGE(TAG, "JPEGDEC failed to open image");
+            // heap_caps_free(imageData);
+            free(imageData);
+            return 0;
+        }
+
+        int imgW = jpeg.getWidth();
+        int imgH = jpeg.getHeight();
+
+        float scale = 1.0f;
+        if (imgW > maxWidth) scale = (float)maxWidth / imgW;
+        if (imgH * scale > maxHeight) scale = (float)maxHeight / imgH;
+
+        int scaledH = (int) (imgH * scale);
+
+        // JPEGDEC scale factors of 2
+        int jpegScale = 1;
+        if (scale <= 0.125f) jpegScale = JPEG_SCALE_EIGHTH;
+        else if (scale <= 0.25f) jpegScale = JPEG_SCALE_QUARTER;
+        else if (scale <= 0.5f) jpegScale = JPEG_SCALE_HALF;
+
+        s_jpeg_display = &getDisplay();
+        s_jpeg_x_offset = x + (maxWidth - (int)(imgW * scale)) / 2; // center horizontally
+        s_jpeg_y_offset = y;
+
+        jpeg.decode(0, 0, jpegScale);
+        jpeg.close();
+        // heap_caps_free(imageData);
+        free(imageData);
+
+        return maxHeight;
+        // return scaledH + 4; // height used + margin
+                        
+    }
+
     void drawPage(int pageNum, bool isBookmarked=false) {
         Serial.printf("TextRenderer: page start size: %d, pageNum: %d, textElements size: %d\n", pageStarts.size(), pageNum, textElements.size());
         if (pageNum < 0) return;
@@ -164,7 +317,7 @@ public:
         display.setRotation(1);
         // display.setFont(&FreeSans9pt7b);
         display.setTextColor(GxEPD_BLACK);
-        display.setFullWindow();
+        prepareRefresh();
         display.firstPage();
 
         
@@ -240,6 +393,24 @@ public:
                 if (element.isBlockEnd) {
                     x = MARGIN_LEFT;
                     y += LINESPACE; // Move to next line after a block
+                }
+
+                // magic number for padding
+                if (element.type == ElementType::IMAGE) {
+                    if (curEpub == nullptr) {
+                        Serial.println("curEpub is null");
+                        continue;
+                    }
+                    int imageHeight = get_page_height()/2;
+                    // if image won't fit on remaining page, start a new page
+                    if (y + imageHeight > get_page_height()) {
+                        break;
+                    }
+                    int used = renderImage(curEpub, element.imageSrc, 10, y, 
+                    get_page_width(), imageHeight);
+
+                    y += used;
+                    continue;
                 }
                 
                 //This may be unoptimized since it checks for every character, 
@@ -436,6 +607,26 @@ private:
                     return true;
                 }
             }
+
+            if (element.type == ElementType::IMAGE) {
+                if (curEpub == nullptr) {
+                    Serial.println("curEpub is null");
+                    continue;
+                }
+                int imageHeight = get_page_height() / 2;
+
+                if (y + imageHeight > get_page_height()) {
+                    pageStarts.push_back(i);
+                    // y = 0;
+                    return true;
+                }
+                Serial.printf("Rendering image %s\n", element.imageSrc.c_str());
+                int used = renderImage(curEpub, element.imageSrc, 10, y, 
+                    get_page_width() - 5*2, get_page_height() / 2, true);
+
+                y += used;
+                continue;
+            }
         }
         return false;
     }
@@ -475,7 +666,8 @@ public:
 
     
     void clear_screen() {
-        display.setFullWindow();
+        // display.setFullWindow(); // full refresh when clearing (thats up to théuser)
+        prepareRefresh();
         display.firstPage();
         display.fillScreen(GxEPD_WHITE);
         display.nextPage();
@@ -506,7 +698,8 @@ public:
         display.getTextBounds(msg, 0, 0, &tbx, &tby, &tbw, &tbh);
         int16_t x = (display.width() - tbw) / 2 - tbx;
         int16_t y = (display.height() - tbh) / 2 - tby;
-        display.setFullWindow();
+        // display.setPartialWindow(0, 0, display.width(), display.height()); // this should make it do a fast draw
+        prepareRefresh();
         display.firstPage();
         // use fast method to draw a filled rectangle as background for the message
         display.fillScreen(GxEPD_WHITE);
