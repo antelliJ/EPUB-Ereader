@@ -341,7 +341,7 @@ void epub_list_load_task(void *parameter) {
   Serial.println("Starting EPUB list load task");
   if (list->load("/")) {
     Serial.println("Epub files loaded");
-    renderer->forceFullRefresh();
+    // renderer->forceFullRefresh();
     list->set_needs_redraw();
     list->render();
   } else {

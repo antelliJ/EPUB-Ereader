@@ -330,6 +330,8 @@ void EpubReader::set_state_section(uint16_t current_section) {
   }
   ESP_LOGI(TAG, "go to section:%d", current_section);
   state.current_section = current_section;
+  std::string spineItem = epub->get_spine_item(current_section);
+  epub->set_current_spine_item(spineItem);
 }
 
 // This should probably be fixed

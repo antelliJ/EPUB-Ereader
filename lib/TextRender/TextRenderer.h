@@ -258,7 +258,20 @@ public:
         return true;
     }
 
-    
+    // In renderImage, build fullPath relative to the html file's directory, not base_path
+    std::string resolveImagePath(const std::string &spineItemPath, const std::string &imageSrc) {
+        // spineItemPath is e.g. "OEBPS/Text/chapter1.html"
+        // imageSrc is e.g. "../images/cover.jpg"
+        // result should be "OEBPS/images/cover.jpg"
+        
+        // get directory of the spine item
+        size_t lastSlash = spineItemPath.find_last_of('/');
+        std::string dir = (lastSlash != std::string::npos) 
+                        ? spineItemPath.substr(0, lastSlash + 1) 
+                        : "";
+        
+        return normalise_path(dir + imageSrc);
+    }
 
     // returns height consumed so text layout advances accordingly
     int renderImage(Epub *epub, const std::string &imageSrc, int x, int y, int maxWidth, int maxHeight, bool dryRun = false) 
@@ -271,7 +284,7 @@ public:
             return 0;
         }
         // std::string fullPath = normalise_path(basePath + imageSrc);
-        std::string fullPath = epub->get_base_path() + imageSrc;
+        std::string fullPath = resolveImagePath(epub->get_current_spine_item(), imageSrc);
 
         Serial.printf("Loading image data: %s\n", fullPath.c_str());
         size_t imageSize = 0;

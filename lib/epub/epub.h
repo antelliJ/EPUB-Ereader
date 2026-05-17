@@ -40,6 +40,7 @@ private:
   std::vector<EpubTocEntry> m_toc;
   // the base path for items in the EPUB file
   std::string m_base_path;
+  std::string m_current_spine_item;
   // find the path for the content.opf file
   bool find_content_opf_file(ZipFile &zip, std::string &content_opf_file);
   bool parse_content_opf(ZipFile &zip, std::string &content_opf_file);
@@ -64,6 +65,8 @@ public:
   int get_toc_items_count();
   // work out the section index for a toc index
   int get_spine_index_for_toc_index(int toc_index);
+  void set_current_spine_item(const std::string &path) { m_current_spine_item = path; } // used to get relative paths for images
+  std::string get_current_spine_item() { return m_current_spine_item; }
 };
 
 std::string normalise_path(const std::string &path)
