@@ -144,6 +144,7 @@ private:
     int* global_current_page = 0;
 
     bool do_dither = true;
+    bool is_fit = true;
 
 
     const GFXfont* getFontForStyle(SPAN_STYLE style) {
@@ -257,6 +258,8 @@ public:
         return true;
     }
 
+    
+
     // returns height consumed so text layout advances accordingly
     int renderImage(Epub *epub, const std::string &imageSrc, int x, int y, int maxWidth, int maxHeight, bool dryRun = false) 
     {
@@ -304,7 +307,9 @@ public:
 
         float scale = 1.0f;
         if (imgW > maxWidth) scale = (float)maxWidth / imgW;
-        if (imgH * scale > maxHeight) scale = (float)maxHeight / imgH;
+        if (getFit()){
+            if (imgH * scale > maxHeight) scale = (float)maxHeight / imgH;
+        }
 
         int scaledH = (int) (imgH * scale);
 
@@ -770,5 +775,11 @@ public:
 
     bool getDither(){
         return do_dither;
+    }
+    void setFit(bool fit){
+        is_fit = fit;
+    }
+    bool getFit(){
+        return is_fit;
     }
 };

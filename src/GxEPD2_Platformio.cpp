@@ -341,6 +341,7 @@ void epub_list_load_task(void *parameter) {
   Serial.println("Starting EPUB list load task");
   if (list->load("/")) {
     Serial.println("Epub files loaded");
+    renderer->forceFullRefresh();
     list->set_needs_redraw();
     list->render();
   } else {
@@ -581,6 +582,14 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
   case SETUP:
     // will change dither mode, then rerender current page
     renderer->setDither(!renderer->getDither());
+    if (reader){
+      reader->render();
+    }
+    break;
+  
+  case SELECT:
+    // will change fit mode, then rerender current page
+    renderer->setFit(!renderer->getFit()); 
     if (reader){
       reader->render();
     }
