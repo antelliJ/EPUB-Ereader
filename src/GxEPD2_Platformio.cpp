@@ -89,9 +89,6 @@
 #define EPD_RST  16
 #define EPD_BUSY 4
 
-#define NEXT_BUTTON_PIN 7
-#define PREV_BUTTON_PIN 6
-
 // Add this near your #defines
 // #define MAX_DISPLAY_BUFFER_SIZE 65536ul // 64k limit for buffer
 // #define MAX_HEIGHT(EPD) (EPD::HEIGHT <= MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8) ? EPD::HEIGHT : MAX_DISPLAY_BUFFER_SIZE / (EPD::WIDTH / 8))
@@ -133,12 +130,7 @@ int pageStarts[10]; // Stores the char index where each page begins
 int currentPage = 0;
 int totalPages = 0; // NOT USED IN EPUB
 
-unsigned long btnNextPressTime = 0;
-unsigned long btnPrevPressTime = 0;
-bool btnNextPressed = false;
-bool btnPrevPressed = false;
 
-const unsigned long HOLD_DURATION = 1000; // 1 second hold duration for page turn rendering
 
 TextRenderer<DISPLAY_TYPE>* renderer = nullptr;
 static EpubList *epub_list = nullptr;
@@ -529,7 +521,8 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
 
   case MENU:
     ui_state = SELECTING_EPUB;
-    renderer->clear_screen();
+    // renderer->clear_screen();
+    renderer->forceFullRefresh();
 
     delete reader;
     reader = nullptr;
@@ -554,7 +547,8 @@ void handleEpub(TextRenderer<DISPLAY_TYPE> *renderer, UIAction ui_action) {
 
   case OPTIONS:
     ui_state = SELECTING_TABLE_CONTENTS;
-    renderer->clear_screen();
+    // renderer->clear_screen();
+    renderer->forceFullRefresh();
 
     delete reader;
     reader = nullptr;
@@ -902,86 +896,7 @@ void loop() {
   delay(100);
 };
 
-void oldGPIOcmd(){
-  if (digitalRead(NEXT_BUTTON_PIN)==LOW){
-    if (!btnNextPressed) {
-      btnNextPressed = true;
-      btnNextPressTime = millis();
 
-      if (renderer) {
-        currentPage = wrap(0, totalPages - 1, currentPage + 1);
-        reader->next();
-        Serial.printf("Next button pressed! Current page (of section): %d\n", reader->get_current_page());
-        // Serial.printf("Next button pressed! Current page (global): %d\n", reader->get_current_page_global());
-      }
-    } else {
-      if(millis() - btnNextPressTime >= HOLD_DURATION) {
-        Serial.println("Next button held for page turn rendering!");
-        btnNextPressed = false; // reset the button state
-        // Reinit if hibernated
-        display.init(115200, true, 2, false);
-
-        if (renderer) {
-          // renderer->drawPage(currentPage);
-          reader->render();
-        }
-
-        btnNextPressed = false;
-
-        // wait for button release
-        while(digitalRead(NEXT_BUTTON_PIN)==LOW) {
-          delay(10); // debounce delay
-        }
-      }
-    }
-  } else {
-    if (btnNextPressed) {
-      btnNextPressed = false; // reset the button state on release
-    }
-  }
-
-  if (digitalRead(PREV_BUTTON_PIN)==LOW){
-    
-    if (!btnPrevPressed) {
-      btnPrevPressed = true;
-      btnPrevPressTime = millis();
-
-      if (renderer) {
-        // currentPage = max(0, currentPage - 1); // Ensure we don't go below page 0
-        currentPage = wrap(0, totalPages - 1, currentPage - 1); // Wrap around using the helper function
-        reader->prev();
-        Serial.printf("Previous button pressed! Current page (of section): %d\n", reader->get_current_page());
-      }
-    } else {
-      if (millis() - btnPrevPressTime >= HOLD_DURATION) {
-        Serial.printf("Rendering previous page!\n");
-        
-        
-        display.init(115200, true, 2, false);
-
-        if (renderer) {
-          // renderer->drawPage(currentPage);
-          reader->render();
-        }
-
-        btnNextPressed = false;
-
-        // wait for button release
-        while(digitalRead(PREV_BUTTON_PIN)==LOW) {
-          delay(10); // debounce delay
-        }
-      }
-    }
-  } else {
-    if (btnPrevPressed) {
-      btnPrevPressed = false; // reset the button state on release
-    }
-  }
-
-  
-
-  delay(100); // Small delay to avoid busy looping
-}
 
 
 void clearWindow() { // UNUSED

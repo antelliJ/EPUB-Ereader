@@ -734,7 +734,7 @@ public:
 
     
     void clear_screen() {
-        // display.setFullWindow(); // full refresh when clearing (thats up to théuser)
+        // display.setFullWindow(); // full refresh when clearing (thats up to the user)
         prepareRefresh();
         display.firstPage();
         display.fillScreen(GxEPD_WHITE);

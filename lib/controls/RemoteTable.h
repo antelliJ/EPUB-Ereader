@@ -70,6 +70,7 @@ uint32_t scanSignature() {
   return sig;
 }
 
+// Assume scanSignature() is being passed into here
 UIAction getActionForSignal(uint32_t signal) {
     UIAction wrapNum = NONE;
     for (size_t i = 0; i < sizeof(buttons) / sizeof(Button); i++) {

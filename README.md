@@ -1,7 +1,11 @@
 # DIY ESP32 E-reader
+https://github.com/antelliJ/EPUB-Ereader
+
+A fairly simple E reader built using the ESP32-S3 devboard, storing epub files in the flash (can be modified with wifi) and displaying the output to an epaper display
 
 taken inspiration from [this project]([url](https://github.com/atomic14/diy-esp32-epub-reader)) by atomic14:
 https://github.com/atomic14/diy-esp32-epub-reader
+^ This makes use of the espressif framework.
 
 This project uses the arduino framework on PlatformIO, with the graphics library [GXEPD2]([url](https://github.com/ZinggJM/GxEPD2))
 
