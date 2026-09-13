@@ -5,6 +5,9 @@ A fairly simple diy E reader built using the ESP32-S3 devboard, storing epub fil
 
 ![Shot of e-reader](<assets/MainDevice.png>)
 
+
+![Watch the demo video of all features](https://youtu.be/aSZHUxsnEOo)
+
 It actually parses and unzips the zip files and the xhtml of the epubs
 
 taken inspiration from [this project]([url](https://github.com/atomic14/diy-esp32-epub-reader)) by atomic14:
