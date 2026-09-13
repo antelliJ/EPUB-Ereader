@@ -20,9 +20,9 @@ https://github.com/atomic14/diy-esp32-epub-reader
 ```bash
 pip install esptool
 
-python -m esptool --chip esp32s3 --port COMx erase_flash
+python -m esptool --chip esp32-s3-devkitc-1 --port COMx erase_flash
 
-python -m esptool --chip esp32s3 --port COMx write_flash 0x0 epub-ereader.bin
+python -m esptool --chip esp32-s3-devkitc-1 --port COMx write_flash 0x0 epub-ereader.bin
 ```
 
 
@@ -56,6 +56,9 @@ Potential future features:
 Books on the file system are shown on boot in the book list. Opening will open the book to its last saved page.
 The books live on the `spiffs` data partition, with any file ending in the `.epub` extension in the root directory being added to the book list. Bookmarks live in the `/bookmarks` folder of the file system using a proprietary .bmk filetype (its just a text file with the reference for each bookmark), and located by hash
 
+### Navigate table of contents
+If you want to traverse quicker than pressing the rewind / fast forward actions, press the option action while reading a book to open the table of contents
+
 ### Schematic?
 *Coming soon*
 
@@ -80,19 +83,20 @@ The connections I used:
 The remote uses its own multiplexing system, if you'd like to implement your own version
 then create a function that returns a valid `UIAction` (ex. Up, Down, Menu, etc) that is set in the `loop()` method. This is then passed into `handleUserInteraction()`
 
-| Remote Input    |     | UIAction      |What it does    |
-| --------------- | --- | ------------- |----|
-| Setup        |     | SETUP      | Change dither mode of images   |
-| Options         |     | OPTIONS       | Open table of contents    |
-| Audio         |     | FORCE_FULL_REFRESH        | make display refresh (treat ghosting)   |
-| Subtitle         |     | BOOKMARK       | If on the booklist: Starts the webserver, If Reading a book: toggles bookmark on that page   |
-| Disc Menu         |     | MENU       | If reading a book: goes to the book list, If in the webserver: stops server and restarts device    |
-| Stop         |     | SAVE       |If in booklist: 'saves' the screen quality by forcing the screen to clear and refresh, preparring for shutdown. If reading, saves the current page progress into the book's bookmark file     |
-| <<         |     | REWIND       | Skips back to last chapter of current book    |
-| >>         |     | FAST_FORWARD       | Skips forward to next chapter of current book    |
-| Up/Left         |     | UP       | If reading: Go to next page. If on booklist: go to next selection. If on table of contents: go to next selection    |
-| Down/Right         |     | DOWN       | If reading: Go to previous page. If on booklist: go to previous selection. If on table of contents: go to previous selection    |
-| Ok         |     | SELECT       | If in booklist: open book. If reading: sets the image fit mode (from fit to full size). If in table of contents: opens that chapter    |
+| Remote Input |   | UIAction           | What it does                                                                                                                                                                              |
+|--------------|---|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Setup        |   | SETUP              | Change dither mode of images                                                                                                                                                              |
+| Options      |   | OPTIONS            | Open table of contents                                                                                                                                                                    |
+| Audio        |   | FORCE_FULL_REFRESH | make display refresh (treat ghosting)                                                                                                                                                     |
+| Subtitle     |   | BOOKMARK           | If on the booklist: Starts the webserver, If Reading a book: toggles bookmark on that page                                                                                                |
+| Disc Menu    |   | MENU               | If reading a book: goes to the book list, If in the webserver: stops server and restarts device                                                                                           |
+| Stop         |   | SAVE               | If in booklist: 'saves' the screen quality by forcing the screen to clear and refresh, preparring for shutdown. If reading, saves the current page progress into the book's bookmark file |
+| <<           |   | REWIND             | Skips back to last chapter of current book                                                                                                                                                |
+| >>           |   | FAST_FORWARD       | Skips forward to next chapter of current book                                                                                                                                             |
+| Up/Left      |   | UP                 | If reading: Go to next page. If on booklist: go to next selection. If on table of contents: go to next selection                                                                          |
+| Down/Right   |   | DOWN               | If reading: Go to previous page. If on booklist: go to previous selection. If on table of contents: go to previous selection                                                              |
+| Ok           |   | SELECT             | If in booklist: open book. If reading: sets the image fit mode (from fit to full size). If in table of contents: opens that chapter                                                       |
+
 
 ### Book & Bookmark access
 There is an option to enter a webserver hosted by the ESP.
@@ -105,8 +109,31 @@ The table of contents is similarly implemented to atomic14's project (but I have
 
 The ereader can save the current page manually, and bookmark pages. Once finished a session, the user can clear the display for longevity.
 
+
+## Building with PlatformIO
+
+Clone the repo, adjust the COM port and you can upload and flash easily enough - especially with VScode's extension. 
+
+Switching out firmware for another EPD display is also fairly easy, taking a selection from GxEPD2's library and replacing the lines where my display is referenced (mostly the change in `display_config.h` and the `*s_jpeg_display` variable in `TextRenderer.h`).
+
+when ready its:
+`pio run --target upload --target monitor --environment esp32-s3-devkitc-1`
+
+#### To make a merged.bin file:
+
+`pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32-s3-devkitc-1 merge_bin -o merged.bin --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 .pio/build/esp32-s3-devkitc-1/bootloader.bin 0x8000 .pio/build/esp32-s3-devkitc-1/partitions.bin 0x10000 .pio/build/esp32-s3-devkitc-1/firmware.bin`
+
+This creates a `merged.bin` file that can be used to upload to the microcontroller (using the steps used previously for the release builds).
+
 ## How does it work?
 Like atomic14's project, this uses miniz to unzip the files into PSRAM
+These big operations are done on the PSRAM since the internal ram would have lots of trouble decompressing several hundred kb chapters. `ZipFile` allocates an extraction buffer on the SPIRAM (`heap_caps_calloc(..., MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)`), and reads them out to `miniz` in a streamed fashion in 8kb chunks.
+
+`mz_zip_reader_extract_to_mem` would cause stack overflows when used, because it creates a large structure (34kb) on the task stack, which usually was too large
+
+Technically the display is a template parameter, but actually making it configurable was not really tested. But hopefully every method is hidden behind a virtual base class
+
+I'm not quite sure if my usage of `xTaskCreatePinnedToCore` is the most optimized, since I used it just about any time I'm opening a new file, so I left that to core 1, and the Wifi and rendering to core 0
 
 ### Parsing:
 This is done with tinyXML2
@@ -115,3 +142,9 @@ JPEG images are decoded using JPEGDEC, with a toggle for dithered rendering
 
 ### Rendering:
 Done using GXEPD2: https://github.com/ZinggJM/GxEPD2
+
+
+### AI Usage Declaration
+- Code autocomplete and debugging
+- AI explanations for unfamiliar C++ concepts
+- Drafting PlatformIO calls for building
