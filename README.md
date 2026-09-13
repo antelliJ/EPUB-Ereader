@@ -20,9 +20,9 @@ https://github.com/atomic14/diy-esp32-epub-reader
 ```bash
 pip install esptool
 
-python -m esptool --chip esp32-s3-devkitc-1 --port COMx erase_flash
+python -m esptool --chip esp32s3 --port COMx erase_flash
 
-python -m esptool --chip esp32-s3-devkitc-1 --port COMx write_flash 0x0 epub-ereader.bin
+python -m esptool --chip esp32s3 --port COMx write_flash 0x0 epub-ereader.bin
 ```
 
 
@@ -121,7 +121,9 @@ when ready its:
 
 #### To make a merged.bin file:
 
-`pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32-s3-devkitc-1 merge_bin -o merged.bin --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 .pio/build/esp32-s3-devkitc-1/bootloader.bin 0x8000 .pio/build/esp32-s3-devkitc-1/partitions.bin 0x10000 .pio/build/esp32-s3-devkitc-1/firmware.bin`
+Build Using the VSCode platformIO tools, then run in a PlatformIO terminal:
+
+`pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32s3 merge_bin -o merged.bin --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 .pio/build/esp32-s3-devkitc-1/bootloader.bin 0x8000 .pio/build/esp32-s3-devkitc-1/partitions.bin 0x10000 .pio/build/esp32-s3-devkitc-1/firmware.bin`
 
 This creates a `merged.bin` file that can be used to upload to the microcontroller (using the steps used previously for the release builds).
 
